@@ -26,7 +26,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   if (!isOpen) return null;
 
-  const roomUrl = `${window.location.origin}/?room=${boardId}`;
+  const currentPath = window.location.pathname.endsWith('/') 
+    ? window.location.pathname 
+    : `${window.location.pathname}/`;
+  const roomUrl = `${window.location.origin}${currentPath}?room=${boardId}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(roomUrl);
