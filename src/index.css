@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400;1,600;1,700&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #faf8f5;
+  color: #111111;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Luxury Display Serif Typography */
+.font-serif-luxury {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+/* Luxury Editorial Light Backdrop */
+.canvas-bg {
+  background-color: #faf8f5;
+  background-image: 
+    linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.theme-blackboard .canvas-bg {
+  background-color: #0b0f19;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Luxury Minimalist Top Header - Functional Dark Obsidian */
+.luxury-header {
+  height: 64px;
+  background: #0f172a !important;
+  border-bottom: 1px solid #1e293b;
+  padding: 0 32px;
+  color: #ffffff !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* Obsidian Primary Luxury Button */
+.btn-obsidian-primary {
+  background: #0f172a;
+  color: #ffffff !important;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  padding: 14px 28px;
+  border: 1px solid #0f172a;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+}
+
+.btn-obsidian-primary:hover {
+  background: #1e293b;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.35);
+}
+
+/* Luxury Outlined Secondary Button */
+.btn-luxury-outline {
+  background: transparent;
+  color: #0f172a !important;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  padding: 14px 28px;
+  border: 1.5px solid #0f172a;
+  transition: all 0.2s ease;
+}
+
+.btn-luxury-outline:hover {
+  background: #0f172a;
+  color: #ffffff !important;
+}
+
+/* Miro & Luxury Toolbar Floating Cards */
+.miro-toolbar-floating {
+  position: fixed !important;
+  top: 80px !important;
+  left: 20px !important;
+  z-index: 99999 !important;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theme-blackboard .miro-toolbar-floating {
+  background: #0f172a;
+  border-color: #334155;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+.miro-tool-item {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #334155;
+  transition: all 0.15s ease;
+}
+
+.miro-tool-item:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.miro-tool-item.active {
+  background-color: #0f172a;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3);
+}
+
+.theme-blackboard .miro-tool-item {
+  color: #cbd5e1;
+}
+
+.theme-blackboard .miro-tool-item:hover {
+  background-color: #334155;
+  color: #ffffff;
+}
+
+.theme-blackboard .miro-tool-item.active {
+  background-color: #ffffff;
+  color: #0f172a !important;
+}
+
+/* Bottom-Right Zoom Bar Pill */
+.miro-zoom-bar {
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  z-index: 99999 !important;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.theme-blackboard .miro-zoom-bar {
+  background: #0f172a;
+  border-color: #334155;
+  color: #ffffff;
+}
+
+/* Sticky Note Pastel Styles */
+.sticky-yellow {
+  background-color: #fef9c3;
+  border: 1px solid #fde047;
+  color: #0f172a !important;
+}
+
+.sticky-blue {
+  background-color: #eff6ff;
+  border: 1px solid #93c5fd;
+  color: #0f172a !important;
+}
+
+.sticky-pink {
+  background-color: #fdf2f8;
+  border: 1px solid #f9a8d4;
+  color: #0f172a !important;
+}
+
+.sticky-green {
+  background-color: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #0f172a !important;
+}
+
+.sticky-purple {
+  background-color: #faf5ff;
+  border: 1px solid #d8b4fe;
+  color: #0f172a !important;
+}
+
+/* High Contrast Badges */
+.badge-fact {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.badge-opinion {
+  background-color: #7c3aed !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.badge-assumption {
+  background-color: #d97706 !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.badge-suggestion {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.badge-question {
+  background-color: #db2777 !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.selection-box {
+  position: absolute;
+  border: 1.5px dashed #0f172a;
+  background: rgba(15, 23, 42, 0.06);
+  pointer-events: none;
+  z-index: 30;
+}
