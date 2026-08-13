@@ -11,17 +11,19 @@ import { ApiKeyModal } from './components/Modals/ApiKeyModal';
 import { ScenarioSettingsModal } from './components/Modals/ScenarioSettingsModal';
 import { NewBoardModal } from './components/Modals/NewBoardModal';
 
-import { INITIAL_DECISION } from './data/initialState';
 import type { BoardState, EvidenceItem, RealtimeUser } from './types/decision';
-import { RealtimeManager, getRoomIdFromUrl, setRoomIdUrl } from './services/realtime';
+import { 
+  RealtimeManager, 
+  getRoomIdFromUrl, 
+  setRoomIdUrl, 
+  loadStoredBoard, 
+  saveStoredBoard 
+} from './services/realtime';
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'overview' | 'workspace'>('workspace');
   const [roomId, setRoomId] = useState<string>(() => getRoomIdFromUrl());
-  const [board, setBoard] = useState<BoardState>(() => ({
-    ...INITIAL_DECISION,
-    id: getRoomIdFromUrl()
-  }));
+  const [board, setBoard] = useState<BoardState>(() => loadStoredBoard(getRoomIdFromUrl()));
   const [theme, setTheme] = useState<'blackboard' | 'whiteboard'>('whiteboard');
   const [apiKey, setApiKey] = useState<string | null>(null);
 
@@ -49,16 +51,27 @@ export const App: React.FC = () => {
 
   const realtimeManagerRef = useRef<RealtimeManager | null>(null);
   const isSelfUpdateRef = useRef<boolean>(false);
+  const boardRef = useRef<BoardState>(board);
+
+  useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
 
   // Initialize Realtime Sync Manager for Room
   useEffect(() => {
     setRoomIdUrl(roomId);
+    const initialBoard = loadStoredBoard(roomId);
+    setBoard(initialBoard);
+
     const manager = new RealtimeManager(roomId, currentUser);
     realtimeManagerRef.current = manager;
+
+    manager.onRequestState(() => boardRef.current);
 
     manager.onStateUpdate((remoteBoard) => {
       isSelfUpdateRef.current = true;
       setBoard(remoteBoard);
+      saveStoredBoard(remoteBoard);
       setTimeout(() => {
         isSelfUpdateRef.current = false;
       }, 50);
@@ -81,6 +94,7 @@ export const App: React.FC = () => {
   // Broadcast board state changes
   const handleUpdateBoard = (newBoard: BoardState) => {
     setBoard(newBoard);
+    saveStoredBoard(newBoard);
     if (!isSelfUpdateRef.current && realtimeManagerRef.current) {
       realtimeManagerRef.current.broadcastState(newBoard);
     }
@@ -147,6 +161,7 @@ export const App: React.FC = () => {
         onCreateBoard={(newBoard) => {
           setRoomId(newBoard.id);
           setBoard(newBoard);
+          saveStoredBoard(newBoard);
           setCurrentView('workspace');
         }}
       />

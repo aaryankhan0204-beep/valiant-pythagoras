@@ -1,7 +1,8 @@
 import type { BoardState, RealtimeUser } from '../types/decision';
+import { INITIAL_DECISION } from '../data/initialState';
 
 export interface RealtimeMessage {
-  type: 'STATE_UPDATE' | 'CURSOR_MOVE' | 'USER_JOIN' | 'USER_LEAVE';
+  type: 'STATE_UPDATE' | 'CURSOR_MOVE' | 'USER_JOIN' | 'USER_LEAVE' | 'REQUEST_STATE';
   senderId: string;
   senderName: string;
   senderColor?: string;
@@ -15,6 +16,7 @@ export class RealtimeManager {
   private currentUser: RealtimeUser;
   private channel: BroadcastChannel | null = null;
   private onStateUpdateCallback: ((board: BoardState) => void) | null = null;
+  private onRequestStateCallback: (() => BoardState | null) | null = null;
   private onUsersUpdateCallback: ((users: RealtimeUser[]) => void) | null = null;
   private activeUsersMap = new Map<string, RealtimeUser>();
 
@@ -36,6 +38,10 @@ export class RealtimeManager {
 
   public onStateUpdate(callback: (board: BoardState) => void) {
     this.onStateUpdateCallback = callback;
+  }
+
+  public onRequestState(callback: () => BoardState | null) {
+    this.onRequestStateCallback = callback;
   }
 
   public onUsersUpdate(callback: (users: RealtimeUser[]) => void) {
@@ -82,6 +88,16 @@ export class RealtimeManager {
       timestamp: Date.now()
     };
     this.channel.postMessage(msg);
+
+    // Request state from existing active users in room
+    const requestMsg: RealtimeMessage = {
+      type: 'REQUEST_STATE',
+      senderId: this.currentUser.id,
+      senderName: this.currentUser.name,
+      roomId: this.roomId,
+      timestamp: Date.now()
+    };
+    this.channel.postMessage(requestMsg);
   }
 
   private handleMessage(event: MessageEvent<RealtimeMessage>) {
@@ -105,6 +121,16 @@ export class RealtimeManager {
       this.activeUsersMap.set(msg.senderId, existing);
       if (this.onUsersUpdateCallback) {
         this.onUsersUpdateCallback(Array.from(this.activeUsersMap.values()));
+      }
+    }
+
+    if (msg.type === 'USER_JOIN' || msg.type === 'REQUEST_STATE') {
+      // Respond to joiner with current board state if callback provided
+      if (this.onRequestStateCallback) {
+        const currentBoard = this.onRequestStateCallback();
+        if (currentBoard) {
+          this.broadcastState(currentBoard);
+        }
       }
     }
 
@@ -149,4 +175,31 @@ export const setRoomIdUrl = (roomId: string) => {
   const url = new URL(window.location.href);
   url.searchParams.set('room', roomId);
   window.history.pushState({}, '', url.toString());
+};
+
+export const loadStoredBoard = (roomId: string): BoardState => {
+  if (typeof window === 'undefined') return { ...INITIAL_DECISION, id: roomId };
+  try {
+    const key = `valiant_board_${roomId}`;
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return { ...parsed, id: roomId };
+      }
+    }
+  } catch (err) {
+    console.warn('Error reading stored board from localStorage:', err);
+  }
+  return { ...INITIAL_DECISION, id: roomId };
+};
+
+export const saveStoredBoard = (board: BoardState) => {
+  if (typeof window === 'undefined' || !board.id) return;
+  try {
+    const key = `valiant_board_${board.id}`;
+    localStorage.setItem(key, JSON.stringify(board));
+  } catch (err) {
+    console.warn('Error saving board to localStorage:', err);
+  }
 };
