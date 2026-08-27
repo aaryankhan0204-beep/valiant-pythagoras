@@ -19,6 +19,7 @@ import {
   loadStoredBoard, 
   saveStoredBoard 
 } from './services/realtime';
+import { ensureAnonymousAuth } from './services/firebase';
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'overview' | 'workspace'>('workspace');
@@ -56,6 +57,24 @@ export const App: React.FC = () => {
   useEffect(() => {
     boardRef.current = board;
   }, [board]);
+
+  // Authenticate user with Firebase
+  useEffect(() => {
+    ensureAnonymousAuth()
+      .then((fbUser) => {
+        if (fbUser && fbUser.uid) {
+          const updatedUser: RealtimeUser = {
+            ...currentUser,
+            id: fbUser.uid
+          };
+          setCurrentUser(updatedUser);
+          if (realtimeManagerRef.current) {
+            realtimeManagerRef.current.updateCurrentUser(updatedUser);
+          }
+        }
+      })
+      .catch((err) => console.warn('Firebase auth initialization warning:', err));
+  }, []);
 
   // Initialize Realtime Sync Manager for Room
   useEffect(() => {

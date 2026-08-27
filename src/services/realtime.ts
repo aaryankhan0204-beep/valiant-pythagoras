@@ -1,5 +1,14 @@
 import type { BoardState, RealtimeUser } from '../types/decision';
 import { INITIAL_DECISION } from '../data/initialState';
+import { db } from './firebase';
+import { 
+  ref, 
+  set, 
+  onValue, 
+  onDisconnect, 
+  remove 
+} from 'firebase/database';
+import type { Unsubscribe } from 'firebase/database';
 
 export interface RealtimeMessage {
   type: 'STATE_UPDATE' | 'CURSOR_MOVE' | 'USER_JOIN' | 'USER_LEAVE' | 'REQUEST_STATE';
@@ -20,19 +29,91 @@ export class RealtimeManager {
   private onUsersUpdateCallback: ((users: RealtimeUser[]) => void) | null = null;
   private activeUsersMap = new Map<string, RealtimeUser>();
 
+  // Firebase Unsubscribe Listeners
+  private firebaseUnsubscribers: Unsubscribe[] = [];
+  private lastCursorSentTime = 0;
+  private isDestroyed = false;
+
   constructor(roomId: string, currentUser: RealtimeUser) {
     this.roomId = roomId;
     this.currentUser = currentUser;
 
     this.activeUsersMap.set(currentUser.id, currentUser);
 
+    // 1. Setup local BroadcastChannel fallback for same-device tabs
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
         this.channel = new BroadcastChannel(`decision_room_${roomId}`);
-        this.channel.onmessage = this.handleMessage.bind(this);
+        this.channel.onmessage = this.handleBroadcastMessage.bind(this);
       } catch (err) {
         console.warn('BroadcastChannel not supported or disabled:', err);
       }
+    }
+
+    // 2. Setup Firebase Realtime Database cross-device sync listeners
+    this.setupFirebaseListeners();
+  }
+
+  private setupFirebaseListeners() {
+    if (!db) return;
+
+    try {
+      const roomBoardRef = ref(db, `rooms/${this.roomId}/boardState`);
+      const roomUsersRef = ref(db, `rooms/${this.roomId}/users`);
+      const roomCursorsRef = ref(db, `rooms/${this.roomId}/cursors`);
+
+      // A. Listen for Board State changes from remote users
+      const unsubBoard = onValue(roomBoardRef, (snapshot) => {
+        if (this.isDestroyed) return;
+        const remoteBoard = snapshot.val();
+        if (remoteBoard && typeof remoteBoard === 'object' && this.onStateUpdateCallback) {
+          this.onStateUpdateCallback(remoteBoard as BoardState);
+        }
+      });
+      this.firebaseUnsubscribers.push(unsubBoard);
+
+      // B. Listen for Active Users & Cursors from Firebase
+      let currentFirebaseUsers: Record<string, RealtimeUser> = {};
+      let currentFirebaseCursors: Record<string, { x: number; y: number }> = {};
+
+      const updateMergedUsers = () => {
+        const mergedMap = new Map<string, RealtimeUser>();
+        // Add current local user
+        mergedMap.set(this.currentUser.id, this.currentUser);
+
+        // Add remote users from Firebase
+        Object.entries(currentFirebaseUsers).forEach(([id, user]) => {
+          if (user && id) {
+            const cursor = currentFirebaseCursors[id];
+            mergedMap.set(id, {
+              ...user,
+              cursor: cursor ? { x: cursor.x, y: cursor.y } : user.cursor
+            });
+          }
+        });
+
+        this.activeUsersMap = mergedMap;
+        if (this.onUsersUpdateCallback) {
+          this.onUsersUpdateCallback(Array.from(this.activeUsersMap.values()));
+        }
+      };
+
+      const unsubUsers = onValue(roomUsersRef, (snapshot) => {
+        if (this.isDestroyed) return;
+        currentFirebaseUsers = snapshot.val() || {};
+        updateMergedUsers();
+      });
+      this.firebaseUnsubscribers.push(unsubUsers);
+
+      const unsubCursors = onValue(roomCursorsRef, (snapshot) => {
+        if (this.isDestroyed) return;
+        currentFirebaseCursors = snapshot.val() || {};
+        updateMergedUsers();
+      });
+      this.firebaseUnsubscribers.push(unsubCursors);
+
+    } catch (err) {
+      console.warn('Firebase listeners error:', err);
     }
   }
 
@@ -49,58 +130,96 @@ export class RealtimeManager {
   }
 
   public broadcastState(boardState: BoardState) {
-    if (!this.channel) return;
-    const msg: RealtimeMessage = {
-      type: 'STATE_UPDATE',
-      senderId: this.currentUser.id,
-      senderName: this.currentUser.name,
-      senderColor: this.currentUser.color,
-      roomId: this.roomId,
-      payload: boardState,
-      timestamp: Date.now()
-    };
-    this.channel.postMessage(msg);
+    // A. Broadcast to Firebase Realtime DB
+    if (db) {
+      const roomBoardRef = ref(db, `rooms/${this.roomId}/boardState`);
+      set(roomBoardRef, boardState).catch((err) => {
+        console.warn('Firebase set boardState failed:', err);
+      });
+    }
+
+    // B. Fallback Broadcast to local tabs via BroadcastChannel
+    if (this.channel) {
+      const msg: RealtimeMessage = {
+        type: 'STATE_UPDATE',
+        senderId: this.currentUser.id,
+        senderName: this.currentUser.name,
+        senderColor: this.currentUser.color,
+        roomId: this.roomId,
+        payload: boardState,
+        timestamp: Date.now()
+      };
+      this.channel.postMessage(msg);
+    }
   }
 
   public broadcastCursor(x: number, y: number) {
-    if (!this.channel) return;
-    const msg: RealtimeMessage = {
-      type: 'CURSOR_MOVE',
-      senderId: this.currentUser.id,
-      senderName: this.currentUser.name,
-      senderColor: this.currentUser.color,
-      roomId: this.roomId,
-      payload: { x, y },
-      timestamp: Date.now()
-    };
-    this.channel.postMessage(msg);
+    const now = Date.now();
+    // Throttle cursor updates to Firebase (max once every 50ms)
+    if (now - this.lastCursorSentTime > 50) {
+      this.lastCursorSentTime = now;
+      if (db) {
+        const cursorRef = ref(db, `rooms/${this.roomId}/cursors/${this.currentUser.id}`);
+        set(cursorRef, { x, y, timestamp: now }).catch(() => {});
+      }
+    }
+
+    if (this.channel) {
+      const msg: RealtimeMessage = {
+        type: 'CURSOR_MOVE',
+        senderId: this.currentUser.id,
+        senderName: this.currentUser.name,
+        senderColor: this.currentUser.color,
+        roomId: this.roomId,
+        payload: { x, y },
+        timestamp: now
+      };
+      this.channel.postMessage(msg);
+    }
   }
 
   public announcePresence() {
-    if (!this.channel) return;
-    const msg: RealtimeMessage = {
-      type: 'USER_JOIN',
-      senderId: this.currentUser.id,
-      senderName: this.currentUser.name,
-      senderColor: this.currentUser.color,
-      roomId: this.roomId,
-      payload: this.currentUser,
-      timestamp: Date.now()
-    };
-    this.channel.postMessage(msg);
+    // A. Firebase Presence
+    if (db && this.currentUser.id) {
+      const userRef = ref(db, `rooms/${this.roomId}/users/${this.currentUser.id}`);
+      set(userRef, {
+        id: this.currentUser.id,
+        name: this.currentUser.name,
+        avatar: this.currentUser.avatar || '',
+        color: this.currentUser.color || '#0284c7'
+      }).catch((err) => console.warn('Firebase presence announce error:', err));
 
-    // Request state from existing active users in room
-    const requestMsg: RealtimeMessage = {
-      type: 'REQUEST_STATE',
-      senderId: this.currentUser.id,
-      senderName: this.currentUser.name,
-      roomId: this.roomId,
-      timestamp: Date.now()
-    };
-    this.channel.postMessage(requestMsg);
+      // Automatic cleanup on disconnect
+      onDisconnect(userRef).remove();
+      const cursorRef = ref(db, `rooms/${this.roomId}/cursors/${this.currentUser.id}`);
+      onDisconnect(cursorRef).remove();
+    }
+
+    // B. Local BroadcastChannel presence announce
+    if (this.channel) {
+      const msg: RealtimeMessage = {
+        type: 'USER_JOIN',
+        senderId: this.currentUser.id,
+        senderName: this.currentUser.name,
+        senderColor: this.currentUser.color,
+        roomId: this.roomId,
+        payload: this.currentUser,
+        timestamp: Date.now()
+      };
+      this.channel.postMessage(msg);
+
+      const requestMsg: RealtimeMessage = {
+        type: 'REQUEST_STATE',
+        senderId: this.currentUser.id,
+        senderName: this.currentUser.name,
+        roomId: this.roomId,
+        timestamp: Date.now()
+      };
+      this.channel.postMessage(requestMsg);
+    }
   }
 
-  private handleMessage(event: MessageEvent<RealtimeMessage>) {
+  private handleBroadcastMessage(event: MessageEvent<RealtimeMessage>) {
     const msg = event.data;
     if (!msg || msg.roomId !== this.roomId || msg.senderId === this.currentUser.id) {
       return;
@@ -125,7 +244,6 @@ export class RealtimeManager {
     }
 
     if (msg.type === 'USER_JOIN' || msg.type === 'REQUEST_STATE') {
-      // Respond to joiner with current board state if callback provided
       if (this.onRequestStateCallback) {
         const currentBoard = this.onRequestStateCallback();
         if (currentBoard) {
@@ -149,6 +267,21 @@ export class RealtimeManager {
   }
 
   public destroy() {
+    this.isDestroyed = true;
+
+    // 1. Unsubscribe Firebase listeners
+    this.firebaseUnsubscribers.forEach((unsub) => unsub());
+    this.firebaseUnsubscribers = [];
+
+    // 2. Remove user presence & cursor from Firebase
+    if (db && this.currentUser.id) {
+      const userRef = ref(db, `rooms/${this.roomId}/users/${this.currentUser.id}`);
+      const cursorRef = ref(db, `rooms/${this.roomId}/cursors/${this.currentUser.id}`);
+      remove(userRef).catch(() => {});
+      remove(cursorRef).catch(() => {});
+    }
+
+    // 3. Close BroadcastChannel
     if (this.channel) {
       const msg: RealtimeMessage = {
         type: 'USER_LEAVE',
