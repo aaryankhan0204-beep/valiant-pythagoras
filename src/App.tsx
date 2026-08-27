@@ -4,14 +4,15 @@ import { LandingPage } from './components/LandingPage';
 import { DecisionCanvas } from './components/Canvas/DecisionCanvas';
 import { AiAnalystPanel } from './components/AI/AiAnalystPanel';
 import { DecisionModeModal } from './components/Voting/DecisionModeModal';
-import { PolygonPongGame } from './components/Minigame/PolygonPongGame';
+import { CoinFlipModal } from './components/Voting/CoinFlipModal';
+import { TiebreakerGame } from './components/Minigame/TiebreakerGame';
 import { EvidenceModal } from './components/Modals/EvidenceModal';
 import { ShareModal } from './components/Modals/ShareModal';
 import { ScenarioSettingsModal } from './components/Modals/ScenarioSettingsModal';
 import { NewBoardModal } from './components/Modals/NewBoardModal';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
-import type { BoardState, EvidenceItem, RealtimeUser } from './types/decision';
+import type { BoardState, EvidenceItem, RealtimeUser, Scenario } from './types/decision';
 import { 
   RealtimeManager, 
   getRoomIdFromUrl, 
@@ -36,6 +37,8 @@ export const App: React.FC = () => {
   const [isScenarioSettingsOpen, setIsScenarioSettingsOpen] = useState(false);
   const [isNewBoardOpen, setIsNewBoardOpen] = useState(false);
   const [isTiebreakerOpen, setIsTiebreakerOpen] = useState(false);
+  const [isCoinFlipOpen, setIsCoinFlipOpen] = useState(false);
+  const [tiedScenariosForTiebreaker, setTiedScenariosForTiebreaker] = useState<Scenario[]>([]);
   const [activeEvidence, setActiveEvidence] = useState<EvidenceItem | null>(null);
 
   const [currentUser, setCurrentUser] = useState<RealtimeUser>(() => {
@@ -111,6 +114,13 @@ export const App: React.FC = () => {
     };
   }, [roomId]);
 
+  // Auto-open voting modal on all connected screens when voting session starts
+  useEffect(() => {
+    if (board.votingSession?.active && board.votingSession?.status === 'voting') {
+      setIsVotingOpen(true);
+    }
+  }, [board.votingSession?.active, board.votingSession?.startTime, board.votingSession?.status]);
+
   // Broadcast board state changes
   const handleUpdateBoard = (newBoard: BoardState) => {
     const sanitized = sanitizeBoardState(newBoard, roomId);
@@ -118,6 +128,120 @@ export const App: React.FC = () => {
     saveStoredBoard(sanitized);
     if (realtimeManagerRef.current) {
       realtimeManagerRef.current.broadcastState(sanitized);
+    }
+  };
+
+  const handleOpenOrStartVoting = () => {
+    if (!board.votingSession || !board.votingSession.active || board.votingSession.status === 'completed') {
+      // Start fresh 2-minute consensus voting session for everyone
+      const newBoard: BoardState = {
+        ...board,
+        votingSession: {
+          active: true,
+          status: 'voting',
+          startTime: Date.now(),
+          endsAt: Date.now() + 120000,
+          initiatedBy: currentUser.name
+        }
+      };
+      handleUpdateBoard(newBoard);
+    }
+    setIsVotingOpen(true);
+  };
+
+  const handleTriggerCoinFlip = (tiedScenarios: Scenario[]) => {
+    setTiedScenariosForTiebreaker(tiedScenarios);
+    setIsCoinFlipOpen(true);
+  };
+
+  const handleTriggerRandomWheel = (tiedScenarios: Scenario[]) => {
+    setTiedScenariosForTiebreaker(tiedScenarios);
+    setIsTiebreakerOpen(true);
+  };
+
+  const handleSelectCoinFlipWinner = (winnerId: string) => {
+    const winner = board.scenarios.find((s) => s.id === winnerId);
+    if (winner) {
+      const updatedBoard: BoardState = {
+        ...board,
+        votingSession: {
+          ...(board.votingSession || {
+            active: true,
+            status: 'completed',
+            startTime: Date.now(),
+            endsAt: Date.now(),
+            initiatedBy: currentUser.name
+          }),
+          status: 'completed',
+          tiebreaker: {
+            type: 'coinflip',
+            winnerId: winner.id,
+            tiedScenarioIds: (tiedScenariosForTiebreaker.length ? tiedScenariosForTiebreaker : board.scenarios).map((s) => s.id),
+            timestamp: Date.now()
+          }
+        },
+        analysis: {
+          ...(board.analysis || {
+            winningScenarioId: winner.id,
+            winningScenarioTitle: winner.title,
+            confidenceScore: 90,
+            voteBreakdown: [],
+            agreements: [],
+            disagreements: [],
+            unresolvedAssumptions: [],
+            strongestArguments: [],
+            aiSummary: '',
+            timestamp: new Date().toLocaleTimeString()
+          }),
+          winningScenarioId: winner.id,
+          winningScenarioTitle: winner.title,
+          aiSummary: `Winner: ${winner.title} (Resolved via 3D Coin Flip Tiebreaker)`
+        }
+      };
+      handleUpdateBoard(updatedBoard);
+    }
+  };
+
+  const handleSelectRandomWheelWinner = (winnerId: string) => {
+    const winner = board.scenarios.find((s) => s.id === winnerId);
+    if (winner) {
+      const updatedBoard: BoardState = {
+        ...board,
+        votingSession: {
+          ...(board.votingSession || {
+            active: true,
+            status: 'completed',
+            startTime: Date.now(),
+            endsAt: Date.now(),
+            initiatedBy: currentUser.name
+          }),
+          status: 'completed',
+          tiebreaker: {
+            type: 'randomSelector',
+            winnerId: winner.id,
+            tiedScenarioIds: (tiedScenariosForTiebreaker.length ? tiedScenariosForTiebreaker : board.scenarios).map((s) => s.id),
+            timestamp: Date.now()
+          }
+        },
+        analysis: {
+          ...(board.analysis || {
+            winningScenarioId: winner.id,
+            winningScenarioTitle: winner.title,
+            confidenceScore: 90,
+            voteBreakdown: [],
+            agreements: [],
+            disagreements: [],
+            unresolvedAssumptions: [],
+            strongestArguments: [],
+            aiSummary: '',
+            timestamp: new Date().toLocaleTimeString()
+          }),
+          winningScenarioId: winner.id,
+          winningScenarioTitle: winner.title,
+          aiSummary: `Winner: ${winner.title} (Resolved via Random Wheel Selector Tiebreaker)`
+        }
+      };
+      handleUpdateBoard(updatedBoard);
     }
   };
 
@@ -145,7 +269,7 @@ export const App: React.FC = () => {
         theme={theme}
         currentView={currentView}
         onNavigateView={(view) => setCurrentView(view)}
-        onOpenVoting={() => setIsVotingOpen(true)}
+        onOpenVoting={handleOpenOrStartVoting}
         onToggleAiPanel={() => setIsAiPanelOpen(!isAiPanelOpen)}
       />
 
@@ -198,30 +322,27 @@ export const App: React.FC = () => {
         isOpen={isVotingOpen}
         onClose={() => setIsVotingOpen(false)}
         onUpdateBoard={handleUpdateBoard}
-        onLaunchTiebreaker={() => {
-          setIsVotingOpen(false);
-          setIsTiebreakerOpen(true);
-        }}
+        currentUserId={currentUser.id}
+        currentUserName={currentUser.name}
+        onTriggerCoinFlip={handleTriggerCoinFlip}
+        onTriggerRandomWheel={handleTriggerRandomWheel}
       />
 
-      <PolygonPongGame
-        scenarios={board.scenarios}
-        votes={board.votes}
+      {/* 2-Option Coin Flip Tiebreaker */}
+      <CoinFlipModal
+        scenarios={tiedScenariosForTiebreaker.length >= 2 ? tiedScenariosForTiebreaker.slice(0, 2) : board.scenarios.slice(0, 2)}
+        isOpen={isCoinFlipOpen}
+        onClose={() => setIsCoinFlipOpen(false)}
+        onSelectWinner={handleSelectCoinFlipWinner}
+        initialWinnerId={board.votingSession?.tiebreaker?.winnerId}
+      />
+
+      {/* 3+ Option Random Wheel Selector Tiebreaker */}
+      <TiebreakerGame
+        scenarios={tiedScenariosForTiebreaker.length >= 3 ? tiedScenariosForTiebreaker : board.scenarios}
         isOpen={isTiebreakerOpen}
         onClose={() => setIsTiebreakerOpen(false)}
-        onSelectWinner={(winnerId) => {
-          const winner = board.scenarios.find((s) => s.id === winnerId);
-          if (winner) {
-            handleUpdateBoard({
-              ...board,
-              tiebreakerResult: {
-                scenarioId: winner.id,
-                method: `${board.scenarios.length}-Sided Polygon Pong Arena`,
-                date: new Date().toLocaleTimeString()
-              }
-            });
-          }
-        }}
+        onSelectWinner={handleSelectRandomWheelWinner}
       />
 
       <EvidenceModal

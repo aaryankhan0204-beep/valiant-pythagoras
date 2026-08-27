@@ -88,9 +88,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentView === 'workspace' && onOpenVoting && (
             <button
               onClick={onOpenVoting}
-              className="hover:opacity-100 transition-all text-white opacity-70 flex items-center gap-1"
+              className={`transition-all flex items-center gap-1.5 px-2 py-1 rounded-lg ${
+                currentBoard.votingSession?.active && currentBoard.votingSession?.status === 'voting'
+                  ? 'bg-emerald-600/90 text-white font-extrabold shadow-lg shadow-emerald-600/30 animate-pulse'
+                  : 'hover:opacity-100 text-white opacity-70'
+              }`}
             >
               <span>Consensus</span>
+              {currentBoard.votingSession?.active && currentBoard.votingSession?.status === 'voting' && (
+                <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping inline-block" />
+              )}
             </button>
           )}
         </nav>

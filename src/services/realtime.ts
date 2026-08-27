@@ -330,7 +330,8 @@ export const sanitizeBoardState = (rawBoard: any, fallbackRoomId?: string): Boar
     comments: Array.isArray(rawBoard.comments) ? rawBoard.comments : [],
     votes: Array.isArray(rawBoard.votes) ? rawBoard.votes : [],
     criteria: Array.isArray(rawBoard.criteria) ? rawBoard.criteria : [],
-    realtimeUsers: Array.isArray(rawBoard.realtimeUsers) && rawBoard.realtimeUsers.length > 0 ? rawBoard.realtimeUsers : fallback.realtimeUsers
+    realtimeUsers: Array.isArray(rawBoard.realtimeUsers) && rawBoard.realtimeUsers.length > 0 ? rawBoard.realtimeUsers : fallback.realtimeUsers,
+    votingSession: rawBoard.votingSession || fallback.votingSession
   };
 };
 

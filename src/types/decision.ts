@@ -120,6 +120,20 @@ export interface RealtimeUser {
   cursor?: { x: number; y: number };
 }
 
+export interface VotingSession {
+  active: boolean;
+  status: 'voting' | 'completed';
+  startTime: number;
+  endsAt: number;
+  initiatedBy: string;
+  tiebreaker?: {
+    type: 'coinflip' | 'randomSelector';
+    winnerId: string;
+    tiedScenarioIds: string[];
+    timestamp: number;
+  };
+}
+
 export interface BoardState {
   id: string;
   title: string;
@@ -137,5 +151,7 @@ export interface BoardState {
   analysis?: DecisionAnalysis;
   tiebreakerResult?: { scenarioId: string; method: string; date: string };
   realtimeUsers: RealtimeUser[];
+  votingSession?: VotingSession;
   theme?: 'blackboard' | 'whiteboard';
 }
+
