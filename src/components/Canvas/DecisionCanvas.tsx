@@ -93,8 +93,10 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
 
-  // Dragging Card State
-  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  // draggingCardId state value is intentionally unused — dragging is tracked via
+  // draggingCardIdRef for stale-closure-free global handler access.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_draggingCardId, setDraggingCardId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Arrow Curve Control Point Dragging State
@@ -258,7 +260,22 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   const penThicknessRef = useRef(penThickness);
   penThicknessRef.current = penThickness;
 
+  // Stable refs so global listeners never close over stale state values
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const activeToolRef = useRef(activeTool);
+  activeToolRef.current = activeTool;
+  const dragOffsetRef = useRef(dragOffset);
+  dragOffsetRef.current = dragOffset;
+  const panStartRef = useRef(panStart);
+  panStartRef.current = panStart;
+
   // Unconditional Global Mouse Up, Move, Blur & Leave Safety Listeners
+  // IMPORTANT: dep array must stay [] — all mutable values are read via refs.
+  // Putting state values here causes listener re-registration mid-drag, leaving
+  // phantom handlers that never fire a mouseup → "sticky drag" bug in production.
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
       // Safety release check: If mouse primary button is not pressed (e.buttons === 0) while any drag state is active, release!
@@ -267,21 +284,33 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
         return;
       }
 
+      // Read current pan/zoom through refs — no stale closure risk
+      const currentPan = panRef.current;
+      const currentZoom = zoomRef.current;
+
       if (!canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
       const coords = {
-        x: (e.clientX - rect.left - pan.x) / zoom,
-        y: (e.clientY - rect.top - pan.y) / zoom
+        x: (e.clientX - rect.left - currentPan.x) / currentZoom,
+        y: (e.clientY - rect.top - currentPan.y) / currentZoom
       };
 
-      if (draggingCardIdRef.current && activeTool === 'select') {
+      // Panning via hand tool (global tracking so pan continues when cursor leaves canvas)
+      if (isPanningRef.current) {
+        const ps = panStartRef.current;
+        setPan({ x: e.clientX - ps.x, y: e.clientY - ps.y });
+        return;
+      }
+
+      if (draggingCardIdRef.current && activeToolRef.current === 'select') {
         const targetId = draggingCardIdRef.current;
+        const offset = dragOffsetRef.current;
         const updatedCards = latestBoardRef.current.cards.map((c) => {
           if (c.id === targetId && !c.isLocked) {
             return {
               ...c,
-              x: Math.max(10, coords.x - dragOffset.x),
-              y: Math.max(10, coords.y - dragOffset.y)
+              x: Math.max(10, coords.x - offset.x),
+              y: Math.max(10, coords.y - offset.y)
             };
           }
           return c;
@@ -312,6 +341,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       // Synchronously clear React states
       setIsPanning(false);
       setIsSelectingBox(false);
+      setSelectionBox(null);
       setDraggingCardId(null);
       setDraggingArrowControlId(null);
       setIsDrawing(false);
@@ -401,7 +431,9 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       window.removeEventListener('mouseleave', handleGlobalMouseUp);
       document.removeEventListener('mouseleave', handleGlobalMouseUp);
     };
-  }, [pan.x, pan.y, zoom, activeTool, dragOffset]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   // Exact Mouse Canvas Coordinates matching cursor tip
   const getCanvasCoords = (e: React.MouseEvent) => {
@@ -450,14 +482,18 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     }
 
     if (activeTool === 'hand' || e.button === 1) {
+      isPanningRef.current = true;
       setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      const newPanStart = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+      panStartRef.current = newPanStart;
+      setPanStart(newPanStart);
       return;
     }
 
     if (activeTool === 'select') {
       const isBgClick = (e.target as HTMLElement).classList.contains('canvas-bg');
       if (isBgClick) {
+        isSelectingBoxRef.current = true;
         setIsSelectingBox(true);
         setSelectionStart(coords);
         setSelectionBox({ x: coords.x, y: coords.y, width: 0, height: 0 });
@@ -467,12 +503,14 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     }
 
     if (activeTool === 'pen') {
+      isDrawingRef.current = true;
       setIsDrawing(true);
       setCurrentPenPoints([coords]);
       return;
     }
 
     if (activeTool === 'arrow') {
+      isDrawingArrowRef.current = true;
       setIsDrawingArrow(true);
       setArrowStartPos(coords);
       setArrowEndPos(coords);
@@ -518,14 +556,12 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     const coords = getCanvasCoords(e);
     broadcastCursorMove(coords.x, coords.y);
 
-    if (isPanning) {
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-      return;
-    }
+    // Panning is now handled by the global mousemove listener (isPanningRef)
+    // so we skip it here to avoid double-processing.
 
-    // Dragging Arrow Bezier Control Dot
+    // Dragging Arrow Bezier Control Dot — use latestBoardRef to avoid stale closure
     if (draggingArrowControlId) {
-      const updatedCards = board.cards.map((c) => {
+      const updatedCards = latestBoardRef.current.cards.map((c) => {
         if (c.id === draggingArrowControlId) {
           return {
             ...c,
@@ -534,7 +570,11 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
         }
         return c;
       });
-      onUpdateBoard({ ...board, cards: updatedCards });
+      if (onUpdateBoardLocal) {
+        onUpdateBoardLocal({ ...latestBoardRef.current, cards: updatedCards });
+      } else {
+        onUpdateBoard({ ...latestBoardRef.current, cards: updatedCards });
+      }
       return;
     }
 
@@ -546,7 +586,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       const height = Math.abs(coords.y - selectionStart.y);
       setSelectionBox({ x, y, width, height });
 
-      const enclosedIds = board.cards
+      const enclosedIds = latestBoardRef.current.cards
         .filter((c) => c.x >= x && c.x <= x + width && c.y >= y && c.y <= y + height)
         .map((c) => c.id);
 
@@ -566,104 +606,22 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       return;
     }
 
-    // Dragging Cards
-    if (draggingCardId && activeTool === 'select') {
-      const updatedCards = board.cards.map((c) => {
-        if (c.id !== draggingCardId && !selectedCardIds.includes(c.id)) return c;
-        if (c.isLocked) return c;
-
-        if (c.id === draggingCardId) {
-          return {
-            ...c,
-            x: Math.max(10, coords.x - dragOffset.x),
-            y: Math.max(10, coords.y - dragOffset.y)
-          };
-        }
-        return c;
-      });
-      onUpdateBoard({ ...board, cards: updatedCards });
-    }
+    // Card dragging is handled entirely by the global mousemove listener.
   };
 
+
+
+  // handleMouseUpCanvas is intentionally minimal.
+  // ALL draw/arrow finalization and drag commits are handled by the single stable
+  // global handleGlobalMouseUp listener (registered with [] deps), which uses refs
+  // to read fresh state. Having duplicate logic here causes the second caller to
+  // see stale closures and overwrite correctly-committed board states — the root
+  // cause of drawings/arrows disappearing on refresh.
   const handleMouseUpCanvas = () => {
-    setIsPanning(false);
-    setIsSelectingBox(false);
-
-    if (draggingCardId) {
-      commitBoardState(board);
-      setDraggingCardId(null);
-    }
-
-    if (draggingArrowControlId) {
-      commitBoardState(board);
-      setDraggingArrowControlId(null);
-    }
-
-    if (isDrawing) {
-      if (currentPenPoints.length > 2) {
-        const p1 = currentPenPoints[0];
-        const p2 = currentPenPoints[currentPenPoints.length - 1];
-        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-
-        if (dist > 5) {
-          const newCard: ArgumentCardType = {
-            id: 'pen-' + Date.now(),
-            title: 'Pen Drawing',
-            content: '',
-            classification: 'Fact',
-            stance: 'Neutral',
-            scenarioId: board.scenarios[0]?.id || '',
-            x: currentPenPoints[0].x,
-            y: currentPenPoints[0].y,
-            author: 'Host User',
-            isAnonymous: false,
-            cardType: 'drawing',
-            penPoints: currentPenPoints,
-            penColor,
-            penThickness,
-            upvotes: 0,
-            downvotes: 0,
-            createdAt: 'Just now'
-          };
-          commitBoardState({ ...board, cards: [...board.cards, newCard] });
-        }
-      }
-      setIsDrawing(false);
-      setCurrentPenPoints([]);
-    }
-
-    if (isDrawingArrow) {
-      const dist = Math.hypot(arrowEndPos.x - arrowStartPos.x, arrowEndPos.y - arrowStartPos.y);
-      if (dist > 10) {
-        const midX = (arrowStartPos.x + arrowEndPos.x) / 2;
-        const midY = (arrowStartPos.y + arrowEndPos.y) / 2 - 40;
-
-        const newCard: ArgumentCardType = {
-          id: 'arrow-' + Date.now(),
-          title: 'Connector Arrow',
-          content: '',
-          classification: 'Fact',
-          stance: 'Neutral',
-          scenarioId: board.scenarios[0]?.id || '',
-          x: arrowStartPos.x,
-          y: arrowStartPos.y,
-          author: 'Host User',
-          isAnonymous: false,
-          cardType: 'arrow',
-          arrowStart: arrowStartPos,
-          arrowEnd: arrowEndPos,
-          arrowControl: { x: midX, y: midY },
-          upvotes: 0,
-          downvotes: 0,
-          createdAt: 'Just now'
-        };
-        commitBoardState({ ...board, cards: [...board.cards, newCard] });
-      }
-      setIsDrawingArrow(false);
-    }
-
-    setDraggingCardId(null);
+    // Nothing — the global mouseup listener on window handles all cleanup.
+    // We keep this handler to prevent the event from propagating unexpectedly.
   };
+
 
   const handleWheelCanvas = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {

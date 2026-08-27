@@ -114,6 +114,27 @@ export const App: React.FC = () => {
     };
   }, [roomId]);
 
+  // Re-announce presence when tab becomes visible after being hidden.
+  // In production, Firebase connections can go stale after the tab is backgrounded
+  // for a long time. Re-announcing refreshes the presence entry and re-triggers
+  // the onDisconnect handlers, restoring live sync.
+  useEffect(() => {
+    let hiddenAt = 0;
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        hiddenAt = Date.now();
+      } else {
+        const hiddenDuration = Date.now() - hiddenAt;
+        // Only re-announce if the tab was hidden for more than 30 seconds
+        if (hiddenDuration > 30000 && realtimeManagerRef.current) {
+          realtimeManagerRef.current.announcePresence();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   // Auto-open voting modal on all connected screens when voting session starts
   useEffect(() => {
     if (board.votingSession?.active && board.votingSession?.status === 'voting') {
@@ -121,12 +142,13 @@ export const App: React.FC = () => {
     }
   }, [board.votingSession?.active, board.votingSession?.startTime, board.votingSession?.status]);
 
-  // Broadcast board state changes
+  // Broadcast board state changes — skip broadcast when the update originates from
+  // a remote Firebase push (isSelfUpdateRef is true) to prevent write-storm loops.
   const handleUpdateBoard = (newBoard: BoardState) => {
     const sanitized = sanitizeBoardState(newBoard, roomId);
     setBoard(sanitized);
     saveStoredBoard(sanitized);
-    if (realtimeManagerRef.current) {
+    if (realtimeManagerRef.current && !isSelfUpdateRef.current) {
       realtimeManagerRef.current.broadcastState(sanitized);
     }
   };
