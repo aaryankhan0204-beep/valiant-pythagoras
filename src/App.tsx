@@ -131,6 +131,12 @@ export const App: React.FC = () => {
     }
   };
 
+  // Local-only state update (for high-frequency drag events before mouseup)
+  const handleUpdateBoardLocal = (newBoard: BoardState) => {
+    const sanitized = sanitizeBoardState(newBoard, roomId);
+    setBoard(sanitized);
+  };
+
   const handleOpenOrStartVoting = () => {
     if (!board.votingSession || !board.votingSession.active || board.votingSession.status === 'completed') {
       // Start fresh 2-minute consensus voting session for everyone
@@ -284,6 +290,7 @@ export const App: React.FC = () => {
           <DecisionCanvas
             board={board}
             onUpdateBoard={handleUpdateBoard}
+            onUpdateBoardLocal={handleUpdateBoardLocal}
             onOpenEvidence={(ev) => setActiveEvidence(ev)}
             theme={theme}
             onOpenAiAnalyst={() => setIsAiPanelOpen(true)}

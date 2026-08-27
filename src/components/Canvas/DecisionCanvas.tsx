@@ -31,6 +31,7 @@ import { HelpModal } from '../Modals/HelpModal';
 interface DecisionCanvasProps {
   board: BoardState;
   onUpdateBoard: (newBoard: BoardState) => void;
+  onUpdateBoardLocal?: (newBoard: BoardState) => void;
   onOpenEvidence: (evidence: EvidenceItem) => void;
   theme: 'blackboard' | 'whiteboard';
   onOpenAiAnalyst?: () => void;
@@ -51,6 +52,7 @@ interface RemoteCursor {
 export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   board,
   onUpdateBoard,
+  onUpdateBoardLocal,
   onOpenEvidence,
   theme,
   onOpenAiAnalyst,
@@ -284,7 +286,12 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
           }
           return c;
         });
-        onUpdateBoard({ ...latestBoardRef.current, cards: updatedCards });
+        const updatedBoard = { ...latestBoardRef.current, cards: updatedCards };
+        if (onUpdateBoardLocal) {
+          onUpdateBoardLocal(updatedBoard);
+        } else {
+          onUpdateBoard(updatedBoard);
+        }
       }
     };
 
