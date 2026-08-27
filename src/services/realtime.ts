@@ -65,9 +65,21 @@ export class RealtimeManager {
       // A. Listen for Board State changes from remote users
       const unsubBoard = onValue(roomBoardRef, (snapshot) => {
         if (this.isDestroyed) return;
-        const remoteBoard = snapshot.val();
-        if (remoteBoard && typeof remoteBoard === 'object' && this.onStateUpdateCallback) {
-          this.onStateUpdateCallback(remoteBoard as BoardState);
+        if (snapshot.exists()) {
+          const remoteBoard = snapshot.val();
+          if (remoteBoard && typeof remoteBoard === 'object' && this.onStateUpdateCallback) {
+            this.onStateUpdateCallback(remoteBoard as BoardState);
+          }
+        } else {
+          // If no board exists in Firebase for this room yet, publish initial local board
+          if (this.onRequestStateCallback) {
+            const localBoard = this.onRequestStateCallback();
+            if (localBoard) {
+              set(roomBoardRef, localBoard).catch((err) => {
+                console.warn('Firebase initial board publish failed:', err);
+              });
+            }
+          }
         }
       });
       this.firebaseUnsubscribers.push(unsubBoard);

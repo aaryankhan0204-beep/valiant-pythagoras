@@ -114,7 +114,7 @@ export const App: React.FC = () => {
   const handleUpdateBoard = (newBoard: BoardState) => {
     setBoard(newBoard);
     saveStoredBoard(newBoard);
-    if (!isSelfUpdateRef.current && realtimeManagerRef.current) {
+    if (realtimeManagerRef.current) {
       realtimeManagerRef.current.broadcastState(newBoard);
     }
   };
