@@ -236,6 +236,166 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [historyIndex, history]);
 
+  const latestBoardRef = useRef(board);
+  latestBoardRef.current = board;
+
+  const draggingCardIdRef = useRef<string | null>(null);
+  const draggingArrowControlIdRef = useRef<string | null>(null);
+  const isDrawingRef = useRef(false);
+  const isDrawingArrowRef = useRef(false);
+  const isPanningRef = useRef(false);
+  const isSelectingBoxRef = useRef(false);
+  const currentPenPointsRef = useRef(currentPenPoints);
+  currentPenPointsRef.current = currentPenPoints;
+  const arrowStartPosRef = useRef(arrowStartPos);
+  arrowStartPosRef.current = arrowStartPos;
+  const arrowEndPosRef = useRef(arrowEndPos);
+  arrowEndPosRef.current = arrowEndPos;
+  const penColorRef = useRef(penColor);
+  penColorRef.current = penColor;
+  const penThicknessRef = useRef(penThickness);
+  penThicknessRef.current = penThickness;
+
+  // Unconditional Global Mouse Up, Move, Blur & Leave Safety Listeners
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      // Safety release check: If mouse primary button is not pressed (e.buttons === 0) while any drag state is active, release!
+      if (e.buttons === 0 && (draggingCardIdRef.current || draggingArrowControlIdRef.current || isDrawingRef.current || isSelectingBoxRef.current)) {
+        handleGlobalMouseUp();
+        return;
+      }
+
+      if (!canvasRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const coords = {
+        x: (e.clientX - rect.left - pan.x) / zoom,
+        y: (e.clientY - rect.top - pan.y) / zoom
+      };
+
+      if (draggingCardIdRef.current && activeTool === 'select') {
+        const targetId = draggingCardIdRef.current;
+        const updatedCards = latestBoardRef.current.cards.map((c) => {
+          if (c.id === targetId && !c.isLocked) {
+            return {
+              ...c,
+              x: Math.max(10, coords.x - dragOffset.x),
+              y: Math.max(10, coords.y - dragOffset.y)
+            };
+          }
+          return c;
+        });
+        onUpdateBoard({ ...latestBoardRef.current, cards: updatedCards });
+      }
+    };
+
+    const handleGlobalMouseUp = () => {
+      const wasDraggingCard = draggingCardIdRef.current;
+      const wasDraggingArrowControl = draggingArrowControlIdRef.current;
+      const wasDrawing = isDrawingRef.current;
+      const wasDrawingArrow = isDrawingArrowRef.current;
+
+      // Synchronously clear ALL active refs FIRST
+      draggingCardIdRef.current = null;
+      draggingArrowControlIdRef.current = null;
+      isDrawingRef.current = false;
+      isDrawingArrowRef.current = false;
+      isPanningRef.current = false;
+      isSelectingBoxRef.current = false;
+
+      // Synchronously clear React states
+      setIsPanning(false);
+      setIsSelectingBox(false);
+      setDraggingCardId(null);
+      setDraggingArrowControlId(null);
+      setIsDrawing(false);
+      setIsDrawingArrow(false);
+
+      if (wasDraggingCard || wasDraggingArrowControl) {
+        commitBoardState(latestBoardRef.current);
+      }
+
+      if (wasDrawing) {
+        const penPts = currentPenPointsRef.current;
+        if (penPts.length > 2) {
+          const p1 = penPts[0];
+          const p2 = penPts[penPts.length - 1];
+          const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+          if (dist > 5) {
+            const newCard: ArgumentCardType = {
+              id: 'pen-' + Date.now(),
+              title: 'Pen Drawing',
+              content: '',
+              classification: 'Fact',
+              stance: 'Neutral',
+              scenarioId: latestBoardRef.current.scenarios[0]?.id || '',
+              x: penPts[0].x,
+              y: penPts[0].y,
+              author: 'Host User',
+              isAnonymous: false,
+              cardType: 'drawing',
+              penPoints: penPts,
+              penColor: penColorRef.current,
+              penThickness: penThicknessRef.current,
+              upvotes: 0,
+              downvotes: 0,
+              createdAt: 'Just now'
+            };
+            commitBoardState({ ...latestBoardRef.current, cards: [...latestBoardRef.current.cards, newCard] });
+          }
+        }
+        setCurrentPenPoints([]);
+      }
+
+      if (wasDrawingArrow) {
+        const start = arrowStartPosRef.current;
+        const end = arrowEndPosRef.current;
+        const dist = Math.hypot(end.x - start.x, end.y - start.y);
+        if (dist > 10) {
+          const midX = (start.x + end.x) / 2;
+          const midY = (start.y + end.y) / 2 - 40;
+
+          const newCard: ArgumentCardType = {
+            id: 'arrow-' + Date.now(),
+            title: 'Connector Arrow',
+            content: '',
+            classification: 'Fact',
+            stance: 'Neutral',
+            scenarioId: latestBoardRef.current.scenarios[0]?.id || '',
+            x: start.x,
+            y: start.y,
+            author: 'Host User',
+            isAnonymous: false,
+            cardType: 'arrow',
+            arrowStart: start,
+            arrowEnd: end,
+            arrowControl: { x: midX, y: midY },
+            upvotes: 0,
+            downvotes: 0,
+            createdAt: 'Just now'
+          };
+          commitBoardState({ ...latestBoardRef.current, cards: [...latestBoardRef.current.cards, newCard] });
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('pointerup', handleGlobalMouseUp);
+    window.addEventListener('blur', handleGlobalMouseUp);
+    window.addEventListener('mouseleave', handleGlobalMouseUp);
+    document.addEventListener('mouseleave', handleGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('pointerup', handleGlobalMouseUp);
+      window.removeEventListener('blur', handleGlobalMouseUp);
+      window.removeEventListener('mouseleave', handleGlobalMouseUp);
+      document.removeEventListener('mouseleave', handleGlobalMouseUp);
+    };
+  }, [pan.x, pan.y, zoom, activeTool, dragOffset]);
+
   // Exact Mouse Canvas Coordinates matching cursor tip
   const getCanvasCoords = (e: React.MouseEvent) => {
     if (!canvasRef.current) return { x: 0, y: 0 };
@@ -525,6 +685,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       setSelectedCardIds([card.id]);
     }
 
+    draggingCardIdRef.current = card.id;
     setDraggingCardId(card.id);
     const coords = getCanvasCoords(e);
     setDragOffset({
@@ -1066,8 +1227,10 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
             return (
               <div
                 key={card.id}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
                 onMouseDown={(e) => handleCardMouseDown(e, card)}
-                className={`absolute pointer-events-auto cursor-grab active:cursor-grabbing transition-shadow ${
+                className={`absolute pointer-events-auto cursor-grab active:cursor-grabbing select-none transition-shadow ${
                   activeTool === 'eraser' ? 'hover:ring-2 hover:ring-rose-500 rounded-2xl' : ''
                 }`}
                 style={{

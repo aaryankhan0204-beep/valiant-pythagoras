@@ -72,10 +72,10 @@ export class RealtimeManager {
             this.onStateUpdateCallback(sanitized);
           }
         } else {
-          // If no board exists in Firebase for this room yet, publish initial local board
+          // If no board exists in Firebase for this room yet, publish initial local board ONLY if it has cards
           if (this.onRequestStateCallback) {
             const localBoard = this.onRequestStateCallback();
-            if (localBoard) {
+            if (localBoard && Array.isArray(localBoard.cards) && localBoard.cards.length > 0) {
               set(roomBoardRef, localBoard).catch((err) => {
                 console.warn('Firebase initial board publish failed:', err);
               });
@@ -311,11 +311,31 @@ export class RealtimeManager {
   }
 }
 
+export const ensureArray = <T>(val: any): T[] => {
+  if (!val) return [];
+  if (Array.isArray(val)) return (val.filter(Boolean) as T[]);
+  if (typeof val === 'object') return (Object.values(val) as T[]).filter(Boolean);
+  return [];
+};
+
+export const sanitizeCard = (card: any): any => {
+  if (!card || typeof card !== 'object') return card;
+  return {
+    ...card,
+    penPoints: card.penPoints ? ensureArray(card.penPoints) : undefined
+  };
+};
+
 export const sanitizeBoardState = (rawBoard: any, fallbackRoomId?: string): BoardState => {
   const fallback: BoardState = { ...INITIAL_DECISION, id: fallbackRoomId || 'board-new-starter' };
   if (!rawBoard || typeof rawBoard !== 'object') {
     return { ...fallback, id: fallbackRoomId || fallback.id };
   }
+
+  const rawCards = ensureArray(rawBoard.cards);
+  const sanitizedCards = rawCards.map(sanitizeCard);
+  const rawScenarios = ensureArray(rawBoard.scenarios);
+
   return {
     ...fallback,
     ...rawBoard,
@@ -323,14 +343,14 @@ export const sanitizeBoardState = (rawBoard: any, fallbackRoomId?: string): Boar
     title: rawBoard.title || fallback.title,
     decisionPrompt: rawBoard.decisionPrompt || fallback.decisionPrompt,
     preset: rawBoard.preset || fallback.preset,
-    scenarios: Array.isArray(rawBoard.scenarios) && rawBoard.scenarios.length > 0 ? rawBoard.scenarios : fallback.scenarios,
-    cards: Array.isArray(rawBoard.cards) ? rawBoard.cards : [],
-    connectors: Array.isArray(rawBoard.connectors) ? rawBoard.connectors : [],
-    shapes: Array.isArray(rawBoard.shapes) ? rawBoard.shapes : [],
-    comments: Array.isArray(rawBoard.comments) ? rawBoard.comments : [],
-    votes: Array.isArray(rawBoard.votes) ? rawBoard.votes : [],
-    criteria: Array.isArray(rawBoard.criteria) ? rawBoard.criteria : [],
-    realtimeUsers: Array.isArray(rawBoard.realtimeUsers) && rawBoard.realtimeUsers.length > 0 ? rawBoard.realtimeUsers : fallback.realtimeUsers,
+    scenarios: rawScenarios.length > 0 ? rawScenarios : fallback.scenarios,
+    cards: 'cards' in rawBoard ? sanitizedCards : fallback.cards,
+    connectors: ensureArray(rawBoard.connectors),
+    shapes: ensureArray(rawBoard.shapes),
+    comments: ensureArray(rawBoard.comments),
+    votes: ensureArray(rawBoard.votes),
+    criteria: ensureArray(rawBoard.criteria),
+    realtimeUsers: ensureArray(rawBoard.realtimeUsers).length > 0 ? ensureArray(rawBoard.realtimeUsers) : fallback.realtimeUsers,
     votingSession: rawBoard.votingSession || fallback.votingSession
   };
 };
