@@ -209,43 +209,85 @@ Return JSON array of 3 items:
         author: c.isAnonymous ? 'Anonymous' : c.author
       }));
 
+    const scenarioTitles = board.scenarios.map(s => s.title);
+    const scenA = scenarioTitles[0] || 'Option A';
+    const scenB = scenarioTitles[1] || 'Option B';
+    const totalCards = board.cards.length;
+
+    const hotspots: { scenarioTitle: string; issue: string; conflict: string }[] = [];
+    board.scenarios.forEach(scen => {
+      const opposingCards = board.cards.filter(c => c.scenarioId === scen.id && c.stance === 'Oppose');
+      const supportingCards = board.cards.filter(c => c.scenarioId === scen.id && c.stance === 'Support');
+      if (opposingCards.length > 0 && supportingCards.length > 0) {
+        hotspots.push({
+          scenarioTitle: scen.title,
+          issue: `Stance Split on ${scen.title}`,
+          conflict: `Contributors hold opposing views (${supportingCards.length} support vs ${opposingCards.length} oppose) on ${scen.title}.`
+        });
+      }
+    });
+
+    if (hotspots.length === 0 && board.scenarios.length > 0) {
+      const firstScen = board.scenarios[0];
+      const cardsOnFirst = board.cards.filter(c => c.scenarioId === firstScen.id);
+      if (cardsOnFirst.length > 0) {
+        hotspots.push({
+          scenarioTitle: firstScen.title,
+          issue: `Evaluating Trade-offs for ${firstScen.title}`,
+          conflict: `Current contributions for "${firstScen.title}" require further supporting facts.`
+        });
+      }
+    }
+
     return {
-      summary: `The group is balancing high industry exposure against financial constraints and win probability. "${board.scenarios[0]?.title || 'Option A'}" holds high prestige but carries budget risks, while "${board.scenarios[1]?.title || 'Option B'}" offers a safer competitive outcome.`,
-      disagreementHotspots: [
-        {
-          scenarioTitle: board.scenarios[0]?.title || 'Option A',
-          issue: 'Financial Entry Fee vs Industry Exposure',
-          conflict: 'Sam opposes due to non-refundable $350 fee, whereas Aaryan strongly favors record scout presence.'
-        },
-        {
-          scenarioTitle: board.scenarios[2]?.title || 'Option C',
-          issue: 'Parental Permissions & Midterm Schedule',
-          conflict: 'Roadtrip experience is favored by Maya but unbacked regarding family approval during exam week.'
-        }
-      ],
+      summary: totalCards === 0 
+        ? `The board "${board.title}" has ${board.scenarios.length} options defined (${scenarioTitles.join(', ')}). No sticky notes have been placed yet.`
+        : `Analysis of "${board.title}": ${totalCards} note(s) placed across ${board.scenarios.length} options (${scenarioTitles.join(', ')}). ${scenA} and ${scenB} are currently under evaluation.`,
+      disagreementHotspots: hotspots,
       argumentBalance: balance,
       unbackedAssumptions: assumptions,
-      missingInformation: [
-        'Confirmation of parental permission for overnight roadtrip.',
-        'Exact breakdown of travel gas budget per member.',
-        'Audience attendance statistics for Suburban Youth Fest.'
+      missingInformation: totalCards === 0 ? [
+        'Add sticky notes with supporting or opposing points to evaluate choices.',
+        'Upload supporting evidence documents or links.'
+      ] : [
+        `Gather additional empirical evidence to support points under ${scenA}.`,
+        `Clarify trade-offs and impact for ${scenB}.`
       ],
-      recommendation: `If exposure and scout networking are paramount, Option A leads. If financial risk mitigation and high win probability are primary, Option B dominates.`
+      recommendation: totalCards === 0 
+        ? `Start by adding arguments or sticky notes under "${scenA}" or "${scenB}" to begin evaluating.`
+        : `Compare the support/oppose ratio across ${scenarioTitles.join(' and ')} before casting final votes.`
     };
   }
 
   private generateMockQuestionAnswer(board: BoardState, question: string): string {
     const qLower = question.toLowerCase();
-    if (qLower.includes('option b') || qLower.includes('suburban')) {
-      return `For Suburban Youth Fest (Option B), the strongest counter-argument is Aaryan's concern regarding localized audience reach ("Will anyone outside our school district actually see us?"). While cost is zero and win probability is high (~70%), exposure to industry scouts is minimal compared to Option A.`;
+    const scenarioTitles = board.scenarios.map(s => s.title);
+
+    const matchingScen = board.scenarios.find(s => qLower.includes(s.title.toLowerCase()));
+    if (matchingScen) {
+      const scenCards = board.cards.filter(c => c.scenarioId === matchingScen.id);
+      const supports = scenCards.filter(c => c.stance === 'Support');
+      const opposes = scenCards.filter(c => c.stance === 'Oppose');
+      return `For "${matchingScen.title}": There are ${supports.length} supporting note(s) and ${opposes.length} opposing note(s). ${scenCards.length > 0 ? `Key note: "${scenCards[0].title} - ${scenCards[0].content}".` : 'No sticky notes placed under this option yet.'}`;
     }
+
+    if (qLower.includes('opinion') || qLower.includes('think') || qLower.includes('recommend')) {
+      if (board.cards.length === 0) {
+        return `Based on the prompt "${board.decisionPrompt}", both options (${scenarioTitles.join(', ')}) need supporting or opposing points added to form a strong conclusion.`;
+      }
+      const topNote = board.cards[0];
+      return `Regarding "${board.title}": The current decision balances ${scenarioTitles.join(' vs ')}. Note "${topNote.title}" by ${topNote.author} highlights "${topNote.content}". We recommend adding more supporting facts to validate this stance.`;
+    }
+
     if (qLower.includes('assumption') || qLower.includes('relying')) {
-      return `The board relies on 2 critical assumptions: 1) Kabir's assumption that the band has a 70%+ chance of winning Option B based on last year's tapes, and 2) The assumption that all 4 families will approve an overnight trip during midterm week for Option C. Neither has empirical evidence attached yet.`;
+      const assumptions = board.cards.filter(c => c.classification === 'Assumption');
+      if (assumptions.length === 0) {
+        return `There are currently no explicit assumptions tagged on the board. Consider tagging unverified claims as Assumptions.`;
+      }
+      return `The board includes ${assumptions.length} assumption(s): ${assumptions.map(a => `"${a.title}" by ${a.author}`).join('; ')}.`;
     }
-    if (qLower.includes('strongest') || qLower.includes('best')) {
-      return `The single strongest evidence-backed point on the board is the verified judge sheet (PDF attached) confirming Warner & Universal A&R scouts at National Battle of Bands (Option A).`;
-    }
-    return `Based on current board analysis: ${board.cards.length} structured contributions have been filed across ${board.scenarios.length} options. Facts are heavily weighed against monetary risk ($350 entry vs zero fee). We recommend converting unbacked assumptions into facts before calling a final vote.`;
+
+    return `For "${board.title}": ${board.cards.length} note(s) recorded across ${scenarioTitles.join(', ')}. ${board.cards.length > 0 ? `Latest contribution: "${board.cards[0].title}" (${board.cards[0].stance}).` : 'Add sticky notes to evaluate choices.'}`;
   }
 }
 
