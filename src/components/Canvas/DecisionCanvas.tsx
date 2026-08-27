@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import type { BoardState, ArgumentCard as ArgumentCardType, ClassificationType, StanceType, EvidenceItem } from '../../types/decision';
 import { ArgumentCard } from './ArgumentCard';
-import { defaultGeminiService } from '../../services/gemini';
+import { HelpModal } from '../Modals/HelpModal';
 
 interface DecisionCanvasProps {
   board: BoardState;
@@ -129,6 +129,16 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   const [editClassification, setEditClassification] = useState<ClassificationType>('Fact');
   const [editStance, setEditStance] = useState<StanceType>('Support');
   const [editColor, setEditColor] = useState('sticky-yellow');
+
+  // Help Modal State
+  const [showHelpModal, setShowHelpModal] = useState(false);
+
+  // Automatically close shape menu popover when active tool changes away from 'shape'
+  useEffect(() => {
+    if (activeTool !== 'shape') {
+      setShowShapeMenu(false);
+    }
+  }, [activeTool]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -653,50 +663,6 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     setActiveTool('select');
   };
 
-  const [generatingScenarioId, setGeneratingScenarioId] = useState<string | null>(null);
-
-  const handleGeminiAutoGenerateNotes = async (scenarioId: string) => {
-    setGeneratingScenarioId(scenarioId);
-    try {
-      const generatedNotes = await defaultGeminiService.generateArgumentsForScenario(board, scenarioId);
-      if (generatedNotes && generatedNotes.length > 0) {
-        const targetScenario = board.scenarios.find((s) => s.id === scenarioId) || board.scenarios[0];
-        const scenIndex = board.scenarios.findIndex((s) => s.id === targetScenario.id);
-        const numScens = Math.max(board.scenarios.length, 1);
-        const is1vs1 = numScens === 2;
-        const columnWidth = is1vs1 ? 580 : 420;
-        const noteWidth = 280;
-        const baseX = 80 + scenIndex * (columnWidth + 32) + (columnWidth - noteWidth) / 2;
-        const existingInScen = board.cards.filter((c) => c.scenarioId === targetScenario.id).length;
-
-        const newCards: ArgumentCardType[] = generatedNotes.map((gn, idx) => ({
-          id: `ai-note-${Date.now()}-${idx}`,
-          title: gn.title || 'Gemini AI Insight',
-          content: gn.content || 'Generated analytical contribution',
-          classification: gn.classification || 'Suggestion',
-          stance: gn.stance || 'Support',
-          scenarioId,
-          x: baseX,
-          y: 210 + (existingInScen + idx) * 200,
-          width: noteWidth,
-          height: 180,
-          author: 'Gemini AI',
-          isAnonymous: false,
-          cardType: 'sticky',
-          color: gn.color || 'sticky-blue',
-          isLocked: false,
-          upvotes: 2,
-          downvotes: 0,
-          createdAt: 'Just now'
-        }));
-
-        commitBoardState({ ...board, cards: [...board.cards, ...newCards] });
-      }
-    } finally {
-      setGeneratingScenarioId(null);
-    }
-  };
-
   const handleCreateElement = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -755,11 +721,11 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     const updatedCards = board.cards.map((c) => {
       if (c.id !== cardId) return c;
       const isSameVote = c.userVoted === type;
-      let newUp = c.upvotes;
-      let newDown = c.downvotes;
+      let newUp = c.upvotes || 0;
+      let newDown = c.downvotes || 0;
 
-      if (c.userVoted === 'up') newUp--;
-      if (c.userVoted === 'down') newDown--;
+      if (c.userVoted === 'up') newUp = Math.max(0, newUp - 1);
+      if (c.userVoted === 'down') newDown = Math.max(0, newDown - 1);
 
       let newUserVoted: 'up' | 'down' | undefined = type;
       if (isSameVote) {
@@ -773,7 +739,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       return { ...c, upvotes: newUp, downvotes: newDown, userVoted: newUserVoted };
     });
 
-    onUpdateBoard({ ...board, cards: updatedCards });
+    commitBoardState({ ...board, cards: updatedCards });
   };
 
   const handleDeleteCard = (cardId: string) => {
@@ -891,23 +857,6 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
                     <h3 className="font-serif-luxury font-bold text-2xl text-slate-900 dark:text-white mt-2">{scen.title}</h3>
                     <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">{scen.description}</p>
                   </div>
-
-                  {/* Gemini AI Auto-Generate Sticky Notes Button */}
-                  <button
-                    onClick={() => handleGeminiAutoGenerateNotes(scen.id)}
-                    disabled={generatingScenarioId === scen.id}
-                    className="p-2 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-400/30 text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-all shrink-0 disabled:opacity-50"
-                    title="Ask Gemini to generate 3 analytical sticky note points for this option"
-                  >
-                    {generatingScenarioId === scen.id ? (
-                      <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 animate-pulse" />
-                    )}
-                    <span className="hidden sm:inline text-[11px] font-extrabold">
-                      {generatingScenarioId === scen.id ? 'Generating...' : 'Gemini Notes'}
-                    </span>
-                  </button>
                 </div>
 
                 {/* Auto-Align Sticky Note Button */}
@@ -1370,7 +1319,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
         </button>
 
         <button
-          onClick={() => window.open('https://miro.com', '_blank')}
+          onClick={() => setShowHelpModal(true)}
           className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
           title="Help & Shortcuts"
         >
@@ -1661,6 +1610,12 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
           </div>
         </div>
       )}
+
+      {/* Interactive Help & Shortcuts Modal */}
+      <HelpModal
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+      />
 
     </div>
   );

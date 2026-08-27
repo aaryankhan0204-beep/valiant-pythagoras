@@ -7,7 +7,6 @@ import { DecisionModeModal } from './components/Voting/DecisionModeModal';
 import { PolygonPongGame } from './components/Minigame/PolygonPongGame';
 import { EvidenceModal } from './components/Modals/EvidenceModal';
 import { ShareModal } from './components/Modals/ShareModal';
-import { ApiKeyModal } from './components/Modals/ApiKeyModal';
 import { ScenarioSettingsModal } from './components/Modals/ScenarioSettingsModal';
 import { NewBoardModal } from './components/Modals/NewBoardModal';
 
@@ -26,13 +25,12 @@ export const App: React.FC = () => {
   const [roomId, setRoomId] = useState<string>(() => getRoomIdFromUrl());
   const [board, setBoard] = useState<BoardState>(() => loadStoredBoard(getRoomIdFromUrl()));
   const [theme, setTheme] = useState<'blackboard' | 'whiteboard'>('whiteboard');
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const apiKey = null;
 
   // Modals State
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
   const [isVotingOpen, setIsVotingOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [isApiKeyOpen, setIsApiKeyOpen] = useState(false);
   const [isScenarioSettingsOpen, setIsScenarioSettingsOpen] = useState(false);
   const [isNewBoardOpen, setIsNewBoardOpen] = useState(false);
   const [isTiebreakerOpen, setIsTiebreakerOpen] = useState(false);
@@ -143,7 +141,6 @@ export const App: React.FC = () => {
         currentView={currentView}
         onNavigateView={(view) => setCurrentView(view)}
         onOpenVoting={() => setIsVotingOpen(true)}
-        onOpenApiKeyModal={() => setIsApiKeyOpen(true)}
         onToggleAiPanel={() => setIsAiPanelOpen(!isAiPanelOpen)}
       />
 
@@ -235,13 +232,6 @@ export const App: React.FC = () => {
         activeUsers={board.realtimeUsers || [currentUser]}
         currentUser={currentUser}
         onUpdateCurrentUser={handleUpdateCurrentUser}
-      />
-
-      <ApiKeyModal
-        isOpen={isApiKeyOpen}
-        onClose={() => setIsApiKeyOpen(false)}
-        currentApiKey={apiKey}
-        onSaveApiKey={(key) => setApiKey(key)}
       />
 
       <ScenarioSettingsModal

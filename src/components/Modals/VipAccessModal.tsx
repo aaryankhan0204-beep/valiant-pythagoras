@@ -71,7 +71,7 @@ export const VipAccessModal: React.FC<VipAccessModalProps> = ({ isOpen, onClose 
               <input
                 type="text"
                 required
-                placeholder="e.g. Aaryan Sharma"
+                placeholder="e.g. Alex Morgan"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full rounded-xl glass-input px-3 py-2 text-xs"
@@ -83,7 +83,7 @@ export const VipAccessModal: React.FC<VipAccessModalProps> = ({ isOpen, onClose 
               <input
                 type="email"
                 required
-                placeholder="aaryan@example.com"
+                placeholder="alex@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-xl glass-input px-3 py-2 text-xs"
@@ -91,10 +91,10 @@ export const VipAccessModal: React.FC<VipAccessModalProps> = ({ isOpen, onClose 
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Organization / Band Name</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Organization / Department</label>
               <input
                 type="text"
-                placeholder="The Velvet Resonance"
+                placeholder="Acme Corp"
                 value={org}
                 onChange={(e) => setOrg(e.target.value)}
                 className="w-full rounded-xl glass-input px-3 py-2 text-xs"

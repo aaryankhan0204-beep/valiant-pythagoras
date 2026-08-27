@@ -373,31 +373,37 @@ export const ArgumentCard: React.FC<ArgumentCardProps> = ({
             <CornerDownRight className="w-3 h-3" />
           </button>
 
-          <div className="flex items-center space-x-1 bg-black/5 rounded-lg px-1.5 py-0.5 border border-black/10 font-bold text-slate-900">
+          <div className="flex items-center space-x-1.5 bg-black/5 rounded-lg px-2 py-0.5 border border-black/10 font-bold text-slate-900">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onVoteCard(card.id, 'up');
               }}
-              className={`p-0.5 rounded transition-colors ${
+              className={`p-0.5 rounded transition-colors flex items-center space-x-1 ${
                 card.userVoted === 'up' ? 'text-emerald-700 font-extrabold' : 'opacity-70 hover:opacity-100'
               }`}
+              title="Like note"
             >
               <ThumbsUp className="w-3 h-3" />
+              <span className="text-[10px] font-mono font-bold">{card.upvotes || 0}</span>
             </button>
-            <span className="text-[10px] font-mono font-bold">
-              {card.upvotes - card.downvotes}
-            </span>
+
+            <div className="h-3 w-[1px] bg-black/20" />
+
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onVoteCard(card.id, 'down');
               }}
-              className={`p-0.5 rounded transition-colors ${
+              className={`p-0.5 rounded transition-colors flex items-center space-x-1 ${
                 card.userVoted === 'down' ? 'text-rose-700 font-extrabold' : 'opacity-70 hover:opacity-100'
               }`}
+              title="Dislike note"
             >
               <ThumbsDown className="w-3 h-3" />
+              {(card.downvotes || 0) > 0 && (
+                <span className="text-[10px] font-mono font-bold">{card.downvotes}</span>
+              )}
             </button>
           </div>
         </div>

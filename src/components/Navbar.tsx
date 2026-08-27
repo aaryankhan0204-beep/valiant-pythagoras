@@ -4,8 +4,7 @@ import {
   Moon, 
   Share2, 
   Plus,
-  Sparkles,
-  Key
+  Sparkles
 } from 'lucide-react';
 import type { BoardState, RealtimeUser } from '../types/decision';
 import { ShareModal } from './Modals/ShareModal';
@@ -19,7 +18,6 @@ interface NavbarProps {
   currentView: 'overview' | 'workspace';
   onNavigateView: (view: 'overview' | 'workspace') => void;
   onOpenVoting?: () => void;
-  onOpenApiKeyModal?: () => void;
   onToggleAiPanel?: () => void;
 }
 
@@ -32,7 +30,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentView,
   onNavigateView,
   onOpenVoting,
-  onOpenApiKeyModal,
   onToggleAiPanel
 }) => {
   const [showShareModal, setShowShareModal] = useState(false);
@@ -110,17 +107,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Sparkles className="w-4 h-4 text-white animate-pulse" />
               <span className="hidden sm:inline text-[10px] tracking-[0.15em] uppercase text-white">Gemini AI</span>
-            </button>
-          )}
-
-          {/* API Key Modal Button */}
-          {onOpenApiKeyModal && (
-            <button
-              onClick={onOpenApiKeyModal}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700"
-              title="Configure Gemini API Key"
-            >
-              <Key className="w-4 h-4" />
             </button>
           )}
 
