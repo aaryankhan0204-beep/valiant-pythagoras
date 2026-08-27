@@ -114,7 +114,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
 
   // Add Sticky Modal State
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(board.scenarios[0]?.id || '');
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>((board?.scenarios || [])[0]?.id || '');
   
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');

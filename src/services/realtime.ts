@@ -66,9 +66,10 @@ export class RealtimeManager {
       const unsubBoard = onValue(roomBoardRef, (snapshot) => {
         if (this.isDestroyed) return;
         if (snapshot.exists()) {
-          const remoteBoard = snapshot.val();
-          if (remoteBoard && typeof remoteBoard === 'object' && this.onStateUpdateCallback) {
-            this.onStateUpdateCallback(remoteBoard as BoardState);
+          const rawRemoteBoard = snapshot.val();
+          if (rawRemoteBoard && typeof rawRemoteBoard === 'object' && this.onStateUpdateCallback) {
+            const sanitized = sanitizeBoardState(rawRemoteBoard, this.roomId);
+            this.onStateUpdateCallback(sanitized);
           }
         } else {
           // If no board exists in Firebase for this room yet, publish initial local board
@@ -265,7 +266,8 @@ export class RealtimeManager {
     }
 
     if (msg.type === 'STATE_UPDATE' && msg.payload && this.onStateUpdateCallback) {
-      this.onStateUpdateCallback(msg.payload as BoardState);
+      const sanitized = sanitizeBoardState(msg.payload, this.roomId);
+      this.onStateUpdateCallback(sanitized);
     }
   }
 
@@ -309,6 +311,29 @@ export class RealtimeManager {
   }
 }
 
+export const sanitizeBoardState = (rawBoard: any, fallbackRoomId?: string): BoardState => {
+  const fallback: BoardState = { ...INITIAL_DECISION, id: fallbackRoomId || 'board-new-starter' };
+  if (!rawBoard || typeof rawBoard !== 'object') {
+    return { ...fallback, id: fallbackRoomId || fallback.id };
+  }
+  return {
+    ...fallback,
+    ...rawBoard,
+    id: rawBoard.id || fallbackRoomId || fallback.id,
+    title: rawBoard.title || fallback.title,
+    decisionPrompt: rawBoard.decisionPrompt || fallback.decisionPrompt,
+    preset: rawBoard.preset || fallback.preset,
+    scenarios: Array.isArray(rawBoard.scenarios) && rawBoard.scenarios.length > 0 ? rawBoard.scenarios : fallback.scenarios,
+    cards: Array.isArray(rawBoard.cards) ? rawBoard.cards : [],
+    connectors: Array.isArray(rawBoard.connectors) ? rawBoard.connectors : [],
+    shapes: Array.isArray(rawBoard.shapes) ? rawBoard.shapes : [],
+    comments: Array.isArray(rawBoard.comments) ? rawBoard.comments : [],
+    votes: Array.isArray(rawBoard.votes) ? rawBoard.votes : [],
+    criteria: Array.isArray(rawBoard.criteria) ? rawBoard.criteria : [],
+    realtimeUsers: Array.isArray(rawBoard.realtimeUsers) && rawBoard.realtimeUsers.length > 0 ? rawBoard.realtimeUsers : fallback.realtimeUsers
+  };
+};
+
 export const getRoomIdFromUrl = (): string => {
   if (typeof window === 'undefined') return 'board-new-starter';
   const params = new URLSearchParams(window.location.search);
@@ -323,33 +348,18 @@ export const setRoomIdUrl = (roomId: string) => {
 };
 
 export const loadStoredBoard = (roomId: string): BoardState => {
-  const fallback: BoardState = { ...INITIAL_DECISION, id: roomId };
-  if (typeof window === 'undefined') return fallback;
+  if (typeof window === 'undefined') return sanitizeBoardState(null, roomId);
   try {
     const key = `valiant_board_${roomId}`;
     const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        return {
-          ...fallback,
-          ...parsed,
-          id: roomId,
-          scenarios: Array.isArray(parsed.scenarios) && parsed.scenarios.length > 0 ? parsed.scenarios : fallback.scenarios,
-          cards: Array.isArray(parsed.cards) ? parsed.cards : [],
-          connectors: Array.isArray(parsed.connectors) ? parsed.connectors : [],
-          shapes: Array.isArray(parsed.shapes) ? parsed.shapes : [],
-          comments: Array.isArray(parsed.comments) ? parsed.comments : [],
-          votes: Array.isArray(parsed.votes) ? parsed.votes : [],
-          criteria: Array.isArray(parsed.criteria) ? parsed.criteria : [],
-          realtimeUsers: Array.isArray(parsed.realtimeUsers) && parsed.realtimeUsers.length > 0 ? parsed.realtimeUsers : fallback.realtimeUsers
-        };
-      }
+      return sanitizeBoardState(parsed, roomId);
     }
   } catch (err) {
     console.warn('Error reading stored board from localStorage:', err);
   }
-  return fallback;
+  return sanitizeBoardState(null, roomId);
 };
 
 export const saveStoredBoard = (board: BoardState) => {

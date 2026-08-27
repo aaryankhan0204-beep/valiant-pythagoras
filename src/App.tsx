@@ -10,13 +10,15 @@ import { ShareModal } from './components/Modals/ShareModal';
 import { ScenarioSettingsModal } from './components/Modals/ScenarioSettingsModal';
 import { NewBoardModal } from './components/Modals/NewBoardModal';
 
+import { ErrorBoundary } from './components/ErrorBoundary';
 import type { BoardState, EvidenceItem, RealtimeUser } from './types/decision';
 import { 
   RealtimeManager, 
   getRoomIdFromUrl, 
   setRoomIdUrl, 
   loadStoredBoard, 
-  saveStoredBoard 
+  saveStoredBoard,
+  sanitizeBoardState
 } from './services/realtime';
 import { ensureAnonymousAuth } from './services/firebase';
 
@@ -87,8 +89,9 @@ export const App: React.FC = () => {
 
     manager.onStateUpdate((remoteBoard) => {
       isSelfUpdateRef.current = true;
-      setBoard(remoteBoard);
-      saveStoredBoard(remoteBoard);
+      const sanitized = sanitizeBoardState(remoteBoard, roomId);
+      setBoard(sanitized);
+      saveStoredBoard(sanitized);
       setTimeout(() => {
         isSelfUpdateRef.current = false;
       }, 50);
@@ -110,10 +113,11 @@ export const App: React.FC = () => {
 
   // Broadcast board state changes
   const handleUpdateBoard = (newBoard: BoardState) => {
-    setBoard(newBoard);
-    saveStoredBoard(newBoard);
+    const sanitized = sanitizeBoardState(newBoard, roomId);
+    setBoard(sanitized);
+    saveStoredBoard(sanitized);
     if (realtimeManagerRef.current) {
-      realtimeManagerRef.current.broadcastState(newBoard);
+      realtimeManagerRef.current.broadcastState(sanitized);
     }
   };
 
@@ -129,7 +133,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans bg-[#faf8f5]">
+    <ErrorBoundary>
+      <div className="min-h-screen flex flex-col font-sans bg-[#faf8f5]">
       
       {/* Top Navbar */}
       <Navbar
@@ -242,6 +247,7 @@ export const App: React.FC = () => {
       />
 
     </div>
+    </ErrorBoundary>
   );
 };
 
