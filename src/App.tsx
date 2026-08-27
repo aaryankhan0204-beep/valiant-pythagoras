@@ -161,6 +161,12 @@ export const App: React.FC = () => {
             onOpenEvidence={(ev) => setActiveEvidence(ev)}
             theme={theme}
             onOpenAiAnalyst={() => setIsAiPanelOpen(true)}
+            currentUserId={currentUser.id}
+            onCursorMove={(x, y) => {
+              if (realtimeManagerRef.current) {
+                realtimeManagerRef.current.broadcastCursor(x, y);
+              }
+            }}
           />
         )}
 

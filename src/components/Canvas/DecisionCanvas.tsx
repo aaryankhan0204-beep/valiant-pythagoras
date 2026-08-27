@@ -34,6 +34,8 @@ interface DecisionCanvasProps {
   onOpenEvidence: (evidence: EvidenceItem) => void;
   theme: 'blackboard' | 'whiteboard';
   onOpenAiAnalyst?: () => void;
+  onCursorMove?: (x: number, y: number) => void;
+  currentUserId?: string;
 }
 
 export type ToolType = 'select' | 'hand' | 'sticky' | 'text' | 'image' | 'pen' | 'eraser' | 'shape' | 'arrow' | 'comment';
@@ -51,7 +53,9 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   onUpdateBoard,
   onOpenEvidence,
   theme,
-  onOpenAiAnalyst
+  onOpenAiAnalyst,
+  onCursorMove,
+  currentUserId
 }) => {
   // Zoom & Pan State (Centered Initial Position)
   const [zoom, setZoom] = useState<number>(1);
@@ -157,6 +161,9 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
 
   // Broadcast local cursor position
   const broadcastCursorMove = (x: number, y: number) => {
+    if (onCursorMove) {
+      onCursorMove(x, y);
+    }
     if (broadcastChannelRef.current) {
       broadcastChannelRef.current.postMessage({
         type: 'CURSOR_MOVE',
@@ -404,6 +411,11 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   const handleMouseUpCanvas = () => {
     setIsPanning(false);
     setIsSelectingBox(false);
+
+    if (draggingCardId) {
+      commitBoardState(board);
+      setDraggingCardId(null);
+    }
 
     if (draggingArrowControlId) {
       commitBoardState(board);
@@ -913,22 +925,43 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
             ))}
           </div>
 
-          {/* REALTIME REMOTE USER CURSORS */}
-          {Object.values(remoteCursors).map((cur) => (
-            <div
-              key={cur.userId}
-              className="absolute pointer-events-none z-50 flex items-center space-x-1 transition-all duration-75"
-              style={{ left: `${cur.x}px`, top: `${cur.y}px` }}
-            >
-              <MousePointer className="w-5 h-5 text-indigo-600 fill-indigo-600 drop-shadow-md" />
-              <span
-                className="px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white shadow-md whitespace-nowrap"
-                style={{ backgroundColor: cur.color || '#4f46e5' }}
+          {/* REALTIME REMOTE USER CURSORS FROM FIREBASE */}
+          {(board.realtimeUsers || [])
+            .filter((u) => u.cursor && u.id !== currentUserId)
+            .map((u) => (
+              <div
+                key={u.id}
+                className="absolute pointer-events-none z-50 flex items-center space-x-1 transition-all duration-75"
+                style={{ left: `${u.cursor!.x}px`, top: `${u.cursor!.y}px` }}
               >
-                {cur.name}
-              </span>
-            </div>
-          ))}
+                <MousePointer className="w-5 h-5 drop-shadow-md" style={{ color: u.color || '#4f46e5', fill: u.color || '#4f46e5' }} />
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white shadow-md whitespace-nowrap"
+                  style={{ backgroundColor: u.color || '#4f46e5' }}
+                >
+                  {u.name}
+                </span>
+              </div>
+            ))}
+
+          {/* FALLBACK LOCAL BROADCASTCURSORS */}
+          {Object.values(remoteCursors)
+            .filter((c) => c.userId !== currentUserId)
+            .map((cur) => (
+              <div
+                key={cur.userId}
+                className="absolute pointer-events-none z-50 flex items-center space-x-1 transition-all duration-75"
+                style={{ left: `${cur.x}px`, top: `${cur.y}px` }}
+              >
+                <MousePointer className="w-5 h-5 text-indigo-600 fill-indigo-600 drop-shadow-md" />
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white shadow-md whitespace-nowrap"
+                  style={{ backgroundColor: cur.color || '#4f46e5' }}
+                >
+                  {cur.name}
+                </span>
+              </div>
+            ))}
 
           {/* Marquee Region Selection Box */}
           {selectionBox && (
