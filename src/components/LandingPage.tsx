@@ -31,7 +31,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="mt-4">
           <div className="inline-flex items-center space-x-3 text-xs tracking-[0.3em] uppercase font-bold text-slate-500 dark:text-slate-400">
             <span className="h-[1px] w-8 bg-slate-400 dark:bg-slate-600" />
-            <span>DECISION INTELLIGENCE • 2024</span>
+            <span>DECISION INTELLIGENCE • REAL-TIME CANVAS</span>
             <span className="h-[1px] w-8 bg-slate-400 dark:bg-slate-600" />
           </div>
         </div>
@@ -40,12 +40,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="my-auto py-12 max-w-4xl mx-auto">
           
           <h1 className="text-5xl sm:text-7xl md:text-8xl font-serif-luxury tracking-tight text-slate-900 dark:text-white leading-[1.08] mb-6">
-            The Art of <br />
-            <span className="italic font-normal">Consensus & Choice</span>
+            Valiant <br />
+            <span className="italic font-normal">Real-Time Decision Canvas</span>
           </h1>
 
           <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed mb-10 font-normal">
-            Discover our curated workspace for high-stakes decision making, crafted for rigorous evaluation, weighted criteria, and systematic team agreement.
+            A real-time collaborative whiteboard designed for teams to structure ideas, evaluate choices, and make confident decisions together.
           </p>
 
           {/* Dual Luxury Action Buttons - Solid Obsidian & Solid Crisp White Buttons */}
@@ -82,7 +82,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
 
           <h3 className="text-2xl font-serif-luxury font-bold text-slate-900 dark:text-white mb-2">
-            {board.decisionPrompt}
+            {board.decisionPrompt || 'Which Option Should We Select?'}
           </h3>
 
           <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed mb-6">
@@ -90,7 +90,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {board.scenarios.map((scen) => (
+            {(board.scenarios || []).map((scen) => (
               <div 
                 key={scen.id} 
                 className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700"

@@ -323,20 +323,33 @@ export const setRoomIdUrl = (roomId: string) => {
 };
 
 export const loadStoredBoard = (roomId: string): BoardState => {
-  if (typeof window === 'undefined') return { ...INITIAL_DECISION, id: roomId };
+  const fallback: BoardState = { ...INITIAL_DECISION, id: roomId };
+  if (typeof window === 'undefined') return fallback;
   try {
     const key = `valiant_board_${roomId}`;
     const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        return { ...parsed, id: roomId };
+        return {
+          ...fallback,
+          ...parsed,
+          id: roomId,
+          scenarios: Array.isArray(parsed.scenarios) && parsed.scenarios.length > 0 ? parsed.scenarios : fallback.scenarios,
+          cards: Array.isArray(parsed.cards) ? parsed.cards : [],
+          connectors: Array.isArray(parsed.connectors) ? parsed.connectors : [],
+          shapes: Array.isArray(parsed.shapes) ? parsed.shapes : [],
+          comments: Array.isArray(parsed.comments) ? parsed.comments : [],
+          votes: Array.isArray(parsed.votes) ? parsed.votes : [],
+          criteria: Array.isArray(parsed.criteria) ? parsed.criteria : [],
+          realtimeUsers: Array.isArray(parsed.realtimeUsers) && parsed.realtimeUsers.length > 0 ? parsed.realtimeUsers : fallback.realtimeUsers
+        };
       }
     }
   } catch (err) {
     console.warn('Error reading stored board from localStorage:', err);
   }
-  return { ...INITIAL_DECISION, id: roomId };
+  return fallback;
 };
 
 export const saveStoredBoard = (board: BoardState) => {
