@@ -21,7 +21,16 @@ import {
   saveStoredBoard,
   sanitizeBoardState
 } from './services/realtime';
+import { RealtimeManagerLocal } from './services/realtimeLocal';
 import { ensureAnonymousAuth } from './services/firebase';
+
+// Auto-detect: use local WebSocket server when running on localhost,
+// Firebase when deployed to production.
+const USE_LOCAL_SERVER = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+type AnyRealtimeManager = RealtimeManager | RealtimeManagerLocal;
+
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'overview' | 'workspace'>('workspace');
@@ -53,8 +62,7 @@ export const App: React.FC = () => {
     };
   });
 
-  const realtimeManagerRef = useRef<RealtimeManager | null>(null);
-  const isSelfUpdateRef = useRef<boolean>(false);
+  const realtimeManagerRef = useRef<AnyRealtimeManager | null>(null);
   const boardRef = useRef<BoardState>(board);
 
   useEffect(() => {
@@ -80,31 +88,48 @@ export const App: React.FC = () => {
   }, []);
 
   // Initialize Realtime Sync Manager for Room
+  // On localhost → local WebSocket server (server.js)
+  // In production → Firebase Realtime Database
   useEffect(() => {
     setRoomIdUrl(roomId);
     const initialBoard = loadStoredBoard(roomId);
     setBoard(initialBoard);
 
-    const manager = new RealtimeManager(roomId, currentUser);
+    console.log(`[App] Using ${USE_LOCAL_SERVER ? 'LOCAL WebSocket server' : 'Firebase'} for realtime sync`);
+
+    const manager: AnyRealtimeManager = USE_LOCAL_SERVER
+      ? new RealtimeManagerLocal(roomId, currentUser)
+      : new RealtimeManager(roomId, currentUser);
+
     realtimeManagerRef.current = manager;
 
     manager.onRequestState(() => boardRef.current);
 
     manager.onStateUpdate((remoteBoard) => {
-      isSelfUpdateRef.current = true;
       const sanitized = sanitizeBoardState(remoteBoard, roomId);
       setBoard(sanitized);
       saveStoredBoard(sanitized);
-      setTimeout(() => {
-        isSelfUpdateRef.current = false;
-      }, 50);
     });
 
-    manager.onUsersUpdate((users) => {
-      setBoard((prev) => ({
-        ...prev,
-        realtimeUsers: users
-      }));
+    // onUsersUpdate can receive either a full user list (Firebase/local on JOIN)
+    // or a single-element cursor update (local manager CURSOR_UPDATE).
+    // Merge correctly in both cases.
+    manager.onUsersUpdate((incoming) => {
+      setBoard((prev) => {
+        const prevUsers = prev.realtimeUsers || [];
+        if (incoming.length === 1 && incoming[0].cursor !== undefined) {
+          // Single cursor-only update — merge into existing list
+          const updated = incoming[0];
+          const merged = prevUsers.map(u =>
+            u.id === updated.id ? { ...u, cursor: updated.cursor } : u
+          );
+          // If user isn't in list yet, add them
+          if (!merged.some(u => u.id === updated.id)) merged.push(updated);
+          return { ...prev, realtimeUsers: merged };
+        }
+        // Full user list — replace
+        return { ...prev, realtimeUsers: incoming };
+      });
     });
 
     manager.announcePresence();
@@ -113,6 +138,7 @@ export const App: React.FC = () => {
       manager.destroy();
     };
   }, [roomId]);
+
 
   // Re-announce presence when tab becomes visible after being hidden.
   // In production, Firebase connections can go stale after the tab is backgrounded
