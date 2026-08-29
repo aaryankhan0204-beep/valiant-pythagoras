@@ -86,8 +86,9 @@ export class RealtimeManager {
             if (this.onRequestStateCallback) {
               const localBoard = this.onRequestStateCallback();
               if (localBoard && typeof localBoard === 'object') {
-                console.log('[Firebase] Publishing initial local board to Firebase:', localBoard.title);
-                set(roomBoardRef, localBoard).catch((err: any) => {
+                const cleaned = cleanForFirebase(sanitizeBoardState(localBoard, this.roomId));
+                console.log('[Firebase] Publishing initial local board to Firebase:', cleaned.title);
+                set(roomBoardRef, cleaned).catch((err: any) => {
                   console.error('[Firebase] Initial board publish FAILED:', err?.code, err?.message);
                 });
               }
@@ -173,12 +174,15 @@ export class RealtimeManager {
   }
 
   public broadcastState(boardState: BoardState) {
+    // Clean all undefined values before passing to Firebase to prevent 'value argument contains undefined' error
+    const cleaned = cleanForFirebase(sanitizeBoardState(boardState, this.roomId));
+
     // Write unconditionally to Firebase — every user-triggered change must reach
     // all collaborators.
     if (db) {
       const roomBoardRef = ref(db, `rooms/${this.roomId}/boardState`);
-      console.log('[Firebase] Writing board state to Firebase, cards:', boardState.cards?.length ?? 0);
-      set(roomBoardRef, boardState).then(() => {
+      console.log('[Firebase] Writing board state to Firebase, cards:', cleaned.cards?.length ?? 0);
+      set(roomBoardRef, cleaned).then(() => {
         console.log('[Firebase] Board write SUCCESS');
       }).catch((err: any) => {
         console.error('[Firebase] Board write FAILED:', err?.code, err?.message);
@@ -196,7 +200,7 @@ export class RealtimeManager {
         senderName: this.currentUser.name,
         senderColor: this.currentUser.color,
         roomId: this.roomId,
-        payload: boardState,
+        payload: cleaned,
         timestamp: Date.now()
       };
       this.channel.postMessage(msg);
@@ -357,6 +361,11 @@ export class RealtimeManager {
   }
 }
 
+export const cleanForFirebase = <T>(obj: T): T => {
+  if (obj === undefined || obj === null) return null as any;
+  return JSON.parse(JSON.stringify(obj));
+};
+
 export const ensureArray = <T>(val: any): T[] => {
   if (!val) return [];
   if (Array.isArray(val)) return (val.filter(Boolean) as T[]);
@@ -366,23 +375,26 @@ export const ensureArray = <T>(val: any): T[] => {
 
 export const sanitizeCard = (card: any): any => {
   if (!card || typeof card !== 'object') return card;
-  return {
-    ...card,
-    penPoints: card.penPoints ? ensureArray(card.penPoints) : undefined
-  };
+  const res = { ...card };
+  if (card.penPoints) {
+    res.penPoints = ensureArray(card.penPoints);
+  } else {
+    delete res.penPoints;
+  }
+  return res;
 };
 
 export const sanitizeBoardState = (rawBoard: any, fallbackRoomId?: string): BoardState => {
   const fallback: BoardState = { ...INITIAL_DECISION, id: fallbackRoomId || 'board-new-starter' };
   if (!rawBoard || typeof rawBoard !== 'object') {
-    return { ...fallback, id: fallbackRoomId || fallback.id };
+    return cleanForFirebase({ ...fallback, id: fallbackRoomId || fallback.id });
   }
 
   const rawCards = ensureArray(rawBoard.cards);
   const sanitizedCards = rawCards.map(sanitizeCard);
   const rawScenarios = ensureArray(rawBoard.scenarios);
 
-  return {
+  const result: BoardState = {
     ...fallback,
     ...rawBoard,
     id: rawBoard.id || fallbackRoomId || fallback.id,
@@ -399,7 +411,10 @@ export const sanitizeBoardState = (rawBoard: any, fallbackRoomId?: string): Boar
     realtimeUsers: ensureArray(rawBoard.realtimeUsers).length > 0 ? ensureArray(rawBoard.realtimeUsers) : fallback.realtimeUsers,
     votingSession: rawBoard.votingSession || fallback.votingSession
   };
+
+  return cleanForFirebase(result);
 };
+
 
 export const getRoomIdFromUrl = (): string => {
   if (typeof window === 'undefined') return 'board-new-starter';
