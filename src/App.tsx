@@ -69,75 +69,86 @@ export const App: React.FC = () => {
     boardRef.current = board;
   }, [board]);
 
-  // Authenticate user with Firebase
+  // Single async setup: authenticate FIRST, then create the realtime manager.
+  // This is critical for Firebase — writes that fire before anonymous auth
+  // completes are silently rejected by Firebase security rules (auth != null).
+  // The old approach used two separate effects that raced each other.
   useEffect(() => {
-    ensureAnonymousAuth()
-      .then((fbUser) => {
-        if (fbUser && fbUser.uid) {
-          const updatedUser: RealtimeUser = {
-            ...currentUser,
-            id: fbUser.uid
-          };
-          setCurrentUser(updatedUser);
-          if (realtimeManagerRef.current) {
-            realtimeManagerRef.current.updateCurrentUser(updatedUser);
+    let cancelled = false;
+    let manager: AnyRealtimeManager | null = null;
+
+    const setup = async () => {
+      setRoomIdUrl(roomId);
+      setBoard(loadStoredBoard(roomId));
+
+      // Resolve the user to use for this session.
+      // For the local server, skip Firebase auth entirely.
+      let sessionUser = currentUser;
+
+      if (!USE_LOCAL_SERVER) {
+        try {
+          const fbUser = await ensureAnonymousAuth();
+          if (fbUser?.uid && !cancelled) {
+            sessionUser = { ...currentUser, id: fbUser.uid };
+            setCurrentUser(sessionUser);
+            console.log('[App] Firebase auth OK — uid:', fbUser.uid);
           }
+        } catch (err) {
+          console.warn('[App] Firebase auth failed, proceeding as unauthenticated:', err);
         }
-      })
-      .catch((err) => console.warn('Firebase auth initialization warning:', err));
-  }, []);
+      }
 
-  // Initialize Realtime Sync Manager for Room
-  // On localhost → local WebSocket server (server.js)
-  // In production → Firebase Realtime Database
-  useEffect(() => {
-    setRoomIdUrl(roomId);
-    const initialBoard = loadStoredBoard(roomId);
-    setBoard(initialBoard);
+      if (cancelled) return;
 
-    console.log(`[App] Using ${USE_LOCAL_SERVER ? 'LOCAL WebSocket server' : 'Firebase'} for realtime sync`);
+      console.log(`[App] Starting ${USE_LOCAL_SERVER ? 'LOCAL WebSocket' : 'Firebase'} sync for room "${roomId}"`);
 
-    const manager: AnyRealtimeManager = USE_LOCAL_SERVER
-      ? new RealtimeManagerLocal(roomId, currentUser)
-      : new RealtimeManager(roomId, currentUser);
+      manager = USE_LOCAL_SERVER
+        ? new RealtimeManagerLocal(roomId, sessionUser)
+        : new RealtimeManager(roomId, sessionUser);
 
-    realtimeManagerRef.current = manager;
+      realtimeManagerRef.current = manager;
 
-    manager.onRequestState(() => boardRef.current);
+      manager.onRequestState(() => boardRef.current);
 
-    manager.onStateUpdate((remoteBoard) => {
-      const sanitized = sanitizeBoardState(remoteBoard, roomId);
-      setBoard(sanitized);
-      saveStoredBoard(sanitized);
-    });
-
-    // onUsersUpdate can receive either a full user list (Firebase/local on JOIN)
-    // or a single-element cursor update (local manager CURSOR_UPDATE).
-    // Merge correctly in both cases.
-    manager.onUsersUpdate((incoming) => {
-      setBoard((prev) => {
-        const prevUsers = prev.realtimeUsers || [];
-        if (incoming.length === 1 && incoming[0].cursor !== undefined) {
-          // Single cursor-only update — merge into existing list
-          const updated = incoming[0];
-          const merged = prevUsers.map(u =>
-            u.id === updated.id ? { ...u, cursor: updated.cursor } : u
-          );
-          // If user isn't in list yet, add them
-          if (!merged.some(u => u.id === updated.id)) merged.push(updated);
-          return { ...prev, realtimeUsers: merged };
-        }
-        // Full user list — replace
-        return { ...prev, realtimeUsers: incoming };
+      manager.onStateUpdate((remoteBoard) => {
+        if (cancelled) return;
+        const sanitized = sanitizeBoardState(remoteBoard, roomId);
+        setBoard(sanitized);
+        saveStoredBoard(sanitized);
       });
-    });
 
-    manager.announcePresence();
+      // onUsersUpdate may receive a full presence list OR a single cursor-only entry.
+      // Handle both cases without clobbering the existing user list.
+      manager.onUsersUpdate((incoming) => {
+        if (cancelled) return;
+        setBoard((prev) => {
+          const prevUsers = prev.realtimeUsers || [];
+          if (incoming.length === 1 && incoming[0].cursor !== undefined) {
+            // Cursor-only update — patch that one user's position
+            const updated = incoming[0];
+            const merged = prevUsers.map(u =>
+              u.id === updated.id ? { ...u, cursor: updated.cursor } : u
+            );
+            if (!merged.some(u => u.id === updated.id)) merged.push(updated);
+            return { ...prev, realtimeUsers: merged };
+          }
+          // Full user list replacement
+          return { ...prev, realtimeUsers: incoming };
+        });
+      });
+
+      manager.announcePresence();
+    };
+
+    setup();
 
     return () => {
-      manager.destroy();
+      cancelled = true;
+      manager?.destroy();
+      realtimeManagerRef.current = null;
     };
   }, [roomId]);
+
 
 
   // Re-announce presence when tab becomes visible after being hidden.
