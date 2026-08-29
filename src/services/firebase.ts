@@ -4,7 +4,7 @@ import type { User } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyA1fXTit3ez17I3Y2ZQ6V4ScmNGJIo5fwo',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyA1fXTIt3ez17I3Y2ZQ6V4ScmNGjIo5fwo',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'valiant-85538.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'valiant-85538',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'valiant-85538.firebasestorage.app',
