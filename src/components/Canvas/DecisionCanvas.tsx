@@ -663,16 +663,19 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   const handleDuplicateSelected = () => {
     if (selectedCardIds.length === 0) return;
     const itemsToClone = board.cards.filter((c) => selectedCardIds.includes(c.id));
-    const clonedItems: ArgumentCardType[] = itemsToClone.map((item) => ({
-      ...item,
-      id: `${item.cardType || 'card'}-${Date.now()}-${Math.floor(Math.random() * 100)}`,
-      x: item.x + 30,
-      y: item.y + 30,
-      penPoints: item.penPoints ? item.penPoints.map((p) => ({ x: p.x + 30, y: p.y + 30 })) : undefined,
-      arrowStart: item.arrowStart ? { x: item.arrowStart.x + 30, y: item.arrowStart.y + 30 } : undefined,
-      arrowEnd: item.arrowEnd ? { x: item.arrowEnd.x + 30, y: item.arrowEnd.y + 30 } : undefined,
-      arrowControl: item.arrowControl ? { x: item.arrowControl.x + 30, y: item.arrowControl.y + 30 } : undefined
-    }));
+    const clonedItems: ArgumentCardType[] = itemsToClone.map((item) => {
+      const cloned: ArgumentCardType = {
+        ...item,
+        id: `${item.cardType || 'card'}-${Date.now()}-${Math.floor(Math.random() * 100)}`,
+        x: item.x + 30,
+        y: item.y + 30
+      };
+      if (item.penPoints) cloned.penPoints = item.penPoints.map((p) => ({ x: p.x + 30, y: p.y + 30 }));
+      if (item.arrowStart) cloned.arrowStart = { x: item.arrowStart.x + 30, y: item.arrowStart.y + 30 };
+      if (item.arrowEnd) cloned.arrowEnd = { x: item.arrowEnd.x + 30, y: item.arrowEnd.y + 30 };
+      if (item.arrowControl) cloned.arrowControl = { x: item.arrowControl.x + 30, y: item.arrowControl.y + 30 };
+      return cloned;
+    });
 
     commitBoardState({
       ...board,
