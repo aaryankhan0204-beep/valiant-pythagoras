@@ -119,6 +119,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
 
   // Add Sticky Modal State
   const [showAddModal, setShowAddModal] = useState(false);
+  const [newNotePos, setNewNotePos] = useState<{ x: number; y: number } | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>((board?.scenarios || [])[0]?.id || '');
   
   const [newTitle, setNewTitle] = useState('');
@@ -273,6 +274,9 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   const panStartRef = useRef(panStart);
   panStartRef.current = panStart;
 
+  // Track last known mouse position on canvas in canvas coordinate space
+  const lastMouseCanvasPosRef = useRef<{ x: number; y: number }>({ x: 300, y: 250 });
+
   // Unconditional Global Mouse Up, Move, Blur & Leave Safety Listeners
   // IMPORTANT: dep array must stay [] — all mutable values are read via refs.
   // Putting state values here causes listener re-registration mid-drag, leaving
@@ -295,11 +299,33 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
         x: (e.clientX - rect.left - currentPan.x) / currentZoom,
         y: (e.clientY - rect.top - currentPan.y) / currentZoom
       };
+      lastMouseCanvasPosRef.current = coords;
 
       // Panning via hand tool (global tracking so pan continues when cursor leaves canvas)
       if (isPanningRef.current) {
         const ps = panStartRef.current;
         setPan({ x: e.clientX - ps.x, y: e.clientY - ps.y });
+        return;
+      }
+
+      // Dragging Arrow Bezier Control Dot
+      if (draggingArrowControlIdRef.current) {
+        const targetId = draggingArrowControlIdRef.current;
+        const updatedCards = latestBoardRef.current.cards.map((c) => {
+          if (c.id === targetId) {
+            return {
+              ...c,
+              arrowControl: coords
+            };
+          }
+          return c;
+        });
+        const updatedBoard = { ...latestBoardRef.current, cards: updatedCards };
+        if (onUpdateBoardLocal) {
+          onUpdateBoardLocal(updatedBoard);
+        } else {
+          onUpdateBoard(updatedBoard);
+        }
         return;
       }
 
@@ -542,6 +568,23 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       commitBoardState({ ...board, cards: [...board.cards, newCard] });
       setActiveTool('select');
       setShowShapeMenu(false);
+      return;
+    }
+
+    if (activeTool === 'sticky') {
+      setNewNotePos(coords);
+      const numScens = Math.max(board.scenarios.length, 1);
+      const is1vs1 = numScens === 2;
+      const columnWidth = is1vs1 ? 580 : 420;
+      const scenIndex = Math.min(
+        Math.max(0, Math.floor((coords.x - 80) / (columnWidth + 32))),
+        board.scenarios.length - 1
+      );
+      if (board.scenarios[scenIndex]) {
+        setSelectedScenarioId(board.scenarios[scenIndex].id);
+      }
+      setShowAddModal(true);
+      setActiveTool('select');
       return;
     }
 
@@ -810,8 +853,9 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     const noteWidth = 280;
 
     const baseX = 80 + scenIndex * (columnWidth + 32) + (columnWidth - noteWidth) / 2;
-    const existingInScen = board.cards.filter((c) => c.scenarioId === targetScenario.id).length;
-    const baseY = 210 + existingInScen * 200;
+    const spawnPos = newNotePos || lastMouseCanvasPosRef.current;
+    const targetX = spawnPos ? Math.max(20, Math.round(spawnPos.x - noteWidth / 2)) : baseX;
+    const targetY = spawnPos ? Math.max(120, Math.round(spawnPos.y - 40)) : 220;
 
     const newCard: ArgumentCardType = {
       id: 'card-' + Date.now(),
@@ -820,8 +864,8 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       classification: newClassification,
       stance: newStance,
       scenarioId: targetScenario.id,
-      x: baseX,
-      y: baseY,
+      x: targetX,
+      y: targetY,
       width: noteWidth,
       height: 180,
       author: 'Host User',
@@ -838,6 +882,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
 
     setNewTitle('');
     setNewContent('');
+    setNewNotePos(null);
     setShowAddModal(false);
   };
 
@@ -1185,6 +1230,7 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
                   <div
                     onMouseDown={(e) => {
                       e.stopPropagation();
+                      draggingArrowControlIdRef.current = card.id;
                       setDraggingArrowControlId(card.id);
                     }}
                     className="absolute z-20 w-4 h-4 rounded-full bg-indigo-600 border-2 border-white shadow-md cursor-move hover:scale-125 transition-transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-auto"
