@@ -81,14 +81,14 @@ export class RealtimeManager {
               this.onStateUpdateCallback(sanitized);
             }
           } else {
-            console.log('[Firebase] No board in DB yet — will publish local board if it has cards');
-            // Room is new — publish local board to Firebase if it already has content
+            console.log('[Firebase] No board in DB yet — publishing initial local board');
+            // Room is new — publish initial local board to Firebase (including scenarios, criteria, title)
             if (this.onRequestStateCallback) {
               const localBoard = this.onRequestStateCallback();
-              if (localBoard && Array.isArray(localBoard.cards) && localBoard.cards.length > 0) {
-                console.log('[Firebase] Publishing initial local board to Firebase, cards:', localBoard.cards.length);
+              if (localBoard && typeof localBoard === 'object') {
+                console.log('[Firebase] Publishing initial local board to Firebase:', localBoard.title);
                 set(roomBoardRef, localBoard).catch((err: any) => {
-                  console.error('[Firebase] Initial board publish FAILED:', err.code, err.message);
+                  console.error('[Firebase] Initial board publish FAILED:', err?.code, err?.message);
                 });
               }
             }
@@ -211,9 +211,11 @@ export class RealtimeManager {
     // Throttle cursor updates to Firebase (max once every 50ms)
     if (now - this.lastCursorSentTime > 50) {
       this.lastCursorSentTime = now;
-      if (db) {
+      if (db && this.currentUser.id) {
         const cursorRef = ref(db, `rooms/${this.roomId}/cursors/${this.currentUser.id}`);
-        set(cursorRef, { x, y, timestamp: now }).catch(() => {});
+        set(cursorRef, { x, y, timestamp: now }).catch((err: any) => {
+          console.warn('[Firebase] Cursor broadcast error:', err?.message);
+        });
       }
     }
 
@@ -234,19 +236,23 @@ export class RealtimeManager {
   public announcePresence() {
     // A. Firebase Presence
     if (db && this.currentUser.id) {
+      console.log('[Firebase] Announcing presence for user:', this.currentUser.id, this.currentUser.name);
       const userRef = ref(db, `rooms/${this.roomId}/users/${this.currentUser.id}`);
       set(userRef, {
         id: this.currentUser.id,
         name: this.currentUser.name,
         avatar: this.currentUser.avatar || '',
         color: this.currentUser.color || '#0284c7'
-      }).catch((err) => console.warn('Firebase presence announce error:', err));
+      }).then(() => {
+        console.log('[Firebase] Presence announced successfully');
+      }).catch((err: any) => console.error('[Firebase] Presence announce ERROR:', err?.code, err?.message));
 
       // Automatic cleanup on disconnect
       onDisconnect(userRef).remove();
       const cursorRef = ref(db, `rooms/${this.roomId}/cursors/${this.currentUser.id}`);
       onDisconnect(cursorRef).remove();
     }
+
 
     // B. Local BroadcastChannel presence announce
     if (this.channel) {
