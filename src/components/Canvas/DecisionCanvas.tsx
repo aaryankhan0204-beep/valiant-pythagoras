@@ -100,7 +100,8 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Arrow Curve Control Point Dragging State
-  const [draggingArrowControlId, setDraggingArrowControlId] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_draggingArrowControlId, setDraggingArrowControlId] = useState<string | null>(null);
 
   // Freehand Pen Drawing State
   const [isDrawing, setIsDrawing] = useState(false);
@@ -560,9 +561,10 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
     // so we skip it here to avoid double-processing.
 
     // Dragging Arrow Bezier Control Dot — use latestBoardRef to avoid stale closure
-    if (draggingArrowControlId) {
+    if (draggingArrowControlIdRef.current) {
+      const targetId = draggingArrowControlIdRef.current;
       const updatedCards = latestBoardRef.current.cards.map((c) => {
-        if (c.id === draggingArrowControlId) {
+        if (c.id === targetId) {
           return {
             ...c,
             arrowControl: coords
@@ -570,10 +572,11 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
         }
         return c;
       });
+      const updatedBoard = { ...latestBoardRef.current, cards: updatedCards };
       if (onUpdateBoardLocal) {
-        onUpdateBoardLocal({ ...latestBoardRef.current, cards: updatedCards });
+        onUpdateBoardLocal(updatedBoard);
       } else {
-        onUpdateBoard({ ...latestBoardRef.current, cards: updatedCards });
+        onUpdateBoard(updatedBoard);
       }
       return;
     }
@@ -594,14 +597,16 @@ export const DecisionCanvas: React.FC<DecisionCanvasProps> = ({
       return;
     }
 
-    // Real-Time Freehand Pen Stroke Drawing
-    if (isDrawing) {
-      setCurrentPenPoints((prev) => [...prev, coords]);
+    // Real-Time Freehand Pen Stroke Drawing — update ref synchronously
+    if (isDrawingRef.current) {
+      currentPenPointsRef.current = [...currentPenPointsRef.current, coords];
+      setCurrentPenPoints(currentPenPointsRef.current);
       return;
     }
 
-    // Real-Time Arrow Drawing
-    if (isDrawingArrow) {
+    // Real-Time Arrow Drawing — update ref synchronously
+    if (isDrawingArrowRef.current) {
+      arrowEndPosRef.current = coords;
       setArrowEndPos(coords);
       return;
     }
