@@ -63,28 +63,43 @@ export class RealtimeManager {
       const roomUsersRef = ref(db, `rooms/${this.roomId}/users`);
       const roomCursorsRef = ref(db, `rooms/${this.roomId}/cursors`);
 
+      console.log('[Firebase] Attaching listeners for room:', this.roomId);
+      console.log('[Firebase] Board ref path:', `rooms/${this.roomId}/boardState`);
+      console.log('[Firebase] Current user id:', this.currentUser.id);
+
       // A. Listen for Board State changes from remote users
-      const unsubBoard = onValue(roomBoardRef, (snapshot) => {
-        if (this.isDestroyed) return;
-        if (snapshot.exists()) {
-          const rawRemoteBoard = snapshot.val();
-          if (rawRemoteBoard && typeof rawRemoteBoard === 'object' && this.onStateUpdateCallback) {
-            const sanitized = sanitizeBoardState(rawRemoteBoard, this.roomId);
-            this.onStateUpdateCallback(sanitized);
-          }
-        } else {
-          // Room is new — publish local board to Firebase if it already has content
-          if (this.onRequestStateCallback) {
-            const localBoard = this.onRequestStateCallback();
-            if (localBoard && Array.isArray(localBoard.cards) && localBoard.cards.length > 0) {
-              set(roomBoardRef, localBoard).catch((err) => {
-                console.warn('Firebase initial board publish failed:', err);
-              });
+      const unsubBoard = onValue(
+        roomBoardRef,
+        (snapshot) => {
+          if (this.isDestroyed) return;
+          console.log('[Firebase] onValue fired — snapshot exists:', snapshot.exists());
+          if (snapshot.exists()) {
+            const rawRemoteBoard = snapshot.val();
+            if (rawRemoteBoard && typeof rawRemoteBoard === 'object' && this.onStateUpdateCallback) {
+              console.log('[Firebase] Received board update, cards:', rawRemoteBoard.cards?.length ?? 0);
+              const sanitized = sanitizeBoardState(rawRemoteBoard, this.roomId);
+              this.onStateUpdateCallback(sanitized);
+            }
+          } else {
+            console.log('[Firebase] No board in DB yet — will publish local board if it has cards');
+            // Room is new — publish local board to Firebase if it already has content
+            if (this.onRequestStateCallback) {
+              const localBoard = this.onRequestStateCallback();
+              if (localBoard && Array.isArray(localBoard.cards) && localBoard.cards.length > 0) {
+                console.log('[Firebase] Publishing initial local board to Firebase, cards:', localBoard.cards.length);
+                set(roomBoardRef, localBoard).catch((err: any) => {
+                  console.error('[Firebase] Initial board publish FAILED:', err.code, err.message);
+                });
+              }
             }
           }
+        },
+        (error: any) => {
+          // This fires when Firebase REJECTS the listener (e.g. rules deny read)
+          console.error('[Firebase] onValue board listener REJECTED:', error?.code, error?.message);
+          console.error('[Firebase] Check: (1) Firebase rules allow read, (2) Anonymous Auth enabled, (3) User is authenticated');
         }
-      });
-
+      );
 
       this.firebaseUnsubscribers.push(unsubBoard);
 
@@ -114,21 +129,33 @@ export class RealtimeManager {
         }
       };
 
-      const unsubUsers = onValue(roomUsersRef, (snapshot) => {
-        if (this.isDestroyed) return;
-        currentFirebaseUsers = snapshot.val() || {};
-        updateMergedUsers();
-      });
+      const unsubUsers = onValue(
+        roomUsersRef,
+        (snapshot) => {
+          if (this.isDestroyed) return;
+          currentFirebaseUsers = snapshot.val() || {};
+          updateMergedUsers();
+        },
+        (error: any) => {
+          console.error('[Firebase] onValue users listener REJECTED:', error?.code, error?.message);
+        }
+      );
       this.firebaseUnsubscribers.push(unsubUsers);
 
-      const unsubCursors = onValue(roomCursorsRef, (snapshot) => {
-        if (this.isDestroyed) return;
-        currentFirebaseCursors = snapshot.val() || {};
-        updateMergedUsers();
-      });
+      const unsubCursors = onValue(
+        roomCursorsRef,
+        (snapshot) => {
+          if (this.isDestroyed) return;
+          currentFirebaseCursors = snapshot.val() || {};
+          updateMergedUsers();
+        },
+        (error: any) => {
+          console.error('[Firebase] onValue cursors listener REJECTED:', error?.code, error?.message);
+        }
+      );
       this.firebaseUnsubscribers.push(unsubCursors);
 
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Firebase listeners error:', err);
     }
   }
@@ -147,13 +174,18 @@ export class RealtimeManager {
 
   public broadcastState(boardState: BoardState) {
     // Write unconditionally to Firebase — every user-triggered change must reach
-    // all collaborators. Previous dedup fingerprint was silently dropping edits,
-    // votes, and position moves. Firebase handles concurrent writes fine.
+    // all collaborators.
     if (db) {
       const roomBoardRef = ref(db, `rooms/${this.roomId}/boardState`);
-      set(roomBoardRef, boardState).catch((err) => {
-        console.warn('Firebase set boardState failed:', err);
+      console.log('[Firebase] Writing board state to Firebase, cards:', boardState.cards?.length ?? 0);
+      set(roomBoardRef, boardState).then(() => {
+        console.log('[Firebase] Board write SUCCESS');
+      }).catch((err: any) => {
+        console.error('[Firebase] Board write FAILED:', err?.code, err?.message);
+        console.error('[Firebase] Check: (1) Firebase rules allow write, (2) Anonymous Auth enabled, (3) User is authenticated');
       });
+    } else {
+      console.error('[Firebase] db is null — Firebase not initialized!');
     }
 
     // Fallback: also broadcast to same-device tabs via BroadcastChannel
@@ -170,6 +202,7 @@ export class RealtimeManager {
       this.channel.postMessage(msg);
     }
   }
+
 
 
 
