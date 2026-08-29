@@ -142,16 +142,19 @@ export const App: React.FC = () => {
     }
   }, [board.votingSession?.active, board.votingSession?.startTime, board.votingSession?.status]);
 
-  // Broadcast board state changes — skip broadcast when the update originates from
-  // a remote Firebase push (isSelfUpdateRef is true) to prevent write-storm loops.
+  // Broadcast board state changes to Firebase and all collaborators.
+  // Called only by user-triggered actions (canvas gestures, modal submissions, voting).
+  // There is no feedback loop risk: onStateUpdate calls setBoard directly,
+  // not through this function, so remote updates never re-trigger a broadcast.
   const handleUpdateBoard = (newBoard: BoardState) => {
     const sanitized = sanitizeBoardState(newBoard, roomId);
     setBoard(sanitized);
     saveStoredBoard(sanitized);
-    if (realtimeManagerRef.current && !isSelfUpdateRef.current) {
+    if (realtimeManagerRef.current) {
       realtimeManagerRef.current.broadcastState(sanitized);
     }
   };
+
 
   // Local-only state update (for high-frequency drag events before mouseup)
   const handleUpdateBoardLocal = (newBoard: BoardState) => {

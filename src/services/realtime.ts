@@ -33,9 +33,6 @@ export class RealtimeManager {
   private firebaseUnsubscribers: Unsubscribe[] = [];
   private lastCursorSentTime = 0;
   private isDestroyed = false;
-  // Dedup: track the last board state JSON fingerprint we pushed to Firebase
-  // to avoid redundant writes that trigger the listener feedback loop.
-  private lastBroadcastHash: string = '';
 
 
   constructor(roomId: string, currentUser: RealtimeUser) {
@@ -73,13 +70,10 @@ export class RealtimeManager {
           const rawRemoteBoard = snapshot.val();
           if (rawRemoteBoard && typeof rawRemoteBoard === 'object' && this.onStateUpdateCallback) {
             const sanitized = sanitizeBoardState(rawRemoteBoard, this.roomId);
-            // Reset dedup hash: the next local write after receiving a remote update
-            // must always go through, even if the fingerprint looks identical.
-            this.lastBroadcastHash = '';
             this.onStateUpdateCallback(sanitized);
           }
         } else {
-          // If no board exists in Firebase for this room yet, publish initial local board ONLY if it has cards
+          // Room is new — publish local board to Firebase if it already has content
           if (this.onRequestStateCallback) {
             const localBoard = this.onRequestStateCallback();
             if (localBoard && Array.isArray(localBoard.cards) && localBoard.cards.length > 0) {
@@ -90,6 +84,7 @@ export class RealtimeManager {
           }
         }
       });
+
 
       this.firebaseUnsubscribers.push(unsubBoard);
 
@@ -151,22 +146,17 @@ export class RealtimeManager {
   }
 
   public broadcastState(boardState: BoardState) {
-    // Compute a lightweight fingerprint to detect redundant back-to-back writes.
-    // Using full JSON.stringify would be expensive; this captures the key signals.
-    const fingerprint = `${boardState.id}|${(boardState.cards || []).length}|${(boardState.connectors || []).length}|${boardState.cards?.[boardState.cards.length - 1]?.id ?? ''}|${boardState.cards?.[0]?.x ?? 0}`;
-
-    const isDuplicate = fingerprint === this.lastBroadcastHash;
-    this.lastBroadcastHash = fingerprint;
-
-    // A. Broadcast to Firebase Realtime DB (skip if identical to last push)
-    if (db && !isDuplicate) {
+    // Write unconditionally to Firebase — every user-triggered change must reach
+    // all collaborators. Previous dedup fingerprint was silently dropping edits,
+    // votes, and position moves. Firebase handles concurrent writes fine.
+    if (db) {
       const roomBoardRef = ref(db, `rooms/${this.roomId}/boardState`);
       set(roomBoardRef, boardState).catch((err) => {
         console.warn('Firebase set boardState failed:', err);
       });
     }
 
-    // B. Fallback Broadcast to local tabs via BroadcastChannel
+    // Fallback: also broadcast to same-device tabs via BroadcastChannel
     if (this.channel) {
       const msg: RealtimeMessage = {
         type: 'STATE_UPDATE',
@@ -180,6 +170,7 @@ export class RealtimeManager {
       this.channel.postMessage(msg);
     }
   }
+
 
 
   public broadcastCursor(x: number, y: number) {
